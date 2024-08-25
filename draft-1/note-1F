@@ -1,0 +1,31 @@
+# 2024 Mar 6
+
+[En-En] Some thoughts after reading through both specs again:
+
+1. Messages should be written in full at once (no flushing of half-written
+   messages). This might seem really pedantic, but HMK does not explicitly
+   enforce that. Obviously, multiple messages can be sent in a singular flush,
+   since newline delimiters are required.
+
+2. In 5·3, I don't get what protocol 1 accomplishes. Anything not caring about
+   your spec won't send it and protocol 2 is no guarantee a bug will not cause
+   a violation.
+
+3. [removed]
+
+4. Provide specific examples of why an engine would want/need to send a null
+   move ("bestmove 0000"). If a position does not have a legal move then the
+   engine responses with "info error" and doesn't update the position which
+   leads to a position desync, which leads me into...
+
+5. If you are going to have "info error", then easy-to-foresee errors (no legal
+   moves, ambiguous options, etc.) should have a standardized body, lest they
+   become IO noise instead of actionable communications.
+
+6. If you require protocol to be sent before any option then you can enforce
+   a stricter set of rules on options parameters, and avoid most stupid
+   cases (see USI and UCCI). That said, I think it is best to not enforce any
+   character encoding and work directly with raw bytes (which has the benefits
+   of not needing to perform validity checks and being more correct on filepath
+   edge cases). Handling newlines with file paths is just an escaping problem,
+   which HMK was not remotely thinking about.

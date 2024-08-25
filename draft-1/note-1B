@@ -1,0 +1,6 @@
+# 2022 Dec 30
+
+[MinusKelvin] Here's something about how clients actually use UCI that bit me
+recently: when they have time margin/overtime forgiveness they can send negative
+values for wtime and btime. It might be a good idea in the spec to explicitly
+allow or forbid this.

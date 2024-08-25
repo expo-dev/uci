@@ -1,0 +1,6 @@
+#! /usr/bin/sh
+mkdir -p out
+./preprocess "draft-2.tex" > "out/draft-2.tex"
+cd out
+xetex "draft-2.tex"
+cd ..

@@ -1,0 +1,93 @@
+# 2024 Mar 6
+
+[Twipply] I have a vague memory of when someone added "score wld 0 0 0" or so
+(whatever it is). That was dumb.
+
+[expo] I have strong but very petty feelings about "UCI_ShowWDL" (and the other
+options that start with "UCI_"): I really don't like underscores. (Also, the
+"UCI" feels unnecessary?)
+
+[Twipply] Is it though?
+
+[expo] Well, not actually:
+> If the GUI gets an unknown option with the prefix "UCI_", it should just
+> ignore it and not display it in the engine's options dialog.
+But why that way of all ways?
+
+But this is fretting over putting lipstick on a pig. The whole "option
+name ... value ..." syntax is problematic in more serious ways.
+
+[analog hors] As far as prefixes go, "UCI_" isn't that offensive.
+
+What do you mean by "why that way"? Why UCI reserves options this way?
+
+[MinusKelvin] I think prefixing options which affect protocol dialect
+(e.g. "UCI_Chess960", "UCI_ShowWDL") with "UCI_" is perfectly sensible.
+
+[analog hors] What's a bit more offensive is how there are options like
+"Hash" that technically count as "UCI_" options but don't have the prefix.
+
+[expo] Perhaps something like "option ⟨type⟩ ⟨name⟩" to which you can append
+" : default ⟨value⟩", " : show ⟨true|false⟩", and so on (using some delimiter
+like ":", or alternatively quoting anything that has whitespace in it, although
+a delimiting character with whitespace around it is simpler to parse).
+
+Anyway, I shouldn't think about this ^^'
+Compatibility is the goal, which precludes improvement or alteration.
+
+[analog hors] I propose that UCI 2 work entirely over JSON strings,
+communicated over "option name UCI2 type string setoption name UCI2 value ..."
+and "info string ...".
+
+[expo] That would be lovely. And probably doable! as long as it's opt-in.
+Perhaps the engine can advertise support for a UCI extension with "info string
+⟨extension⟩". If the client recognizes this special message, it can then
+acknowledge so then engine know it can use the extension. And if the client
+doesn't recognize it, it's just ignored and everything carries on like normal.
+
+Does anyone know when the "..." from an "info string ..." is shown to the user?
+(Does anyone know what clients other than cutechess do?)
+
+[analog hors] In all seriousness, is there really a point to doing this?
+
+[expo] If "info string ..." gets shown to the user, then I think "option name
+UCI_⟨extension⟩ type check default true" is the way it'd have to be done.
+
+[analog hors] I mean, that's how extensions have always worked I think.
+
+[expo] Oh, I suppose that's true. So all there is to do is describe this
+extension process as already practiced. (And possibly propose some extensions,
+like communicating using JSON.)
+
+[MinusKelvin] Quoted strings please. Or at least escaped whitespace.
+Like, how am I supposed to parse "setoption name Stupid value value value"
+or "option name Stupid type check default true type string default true"?
+Like, sure no-one actually does this, but the spec should specify.
+
+[expo]
+> In all seriousness, is there really a point to doing this?
+At the moment, noooooo? I think. But it may be worth documenting, while we're
+at it, how this process ought to work in the future (if it ever is genuinely
+needed).
+
+[analog hors] "setoption name SyzygyPath value /home/.../ value /..."
+
+[MinusKelvin] File paths are impossible.
+
+[expo]
+> Quoted strings please. Or at least escaped whitespace.
+I have this written down from a year ago ^^
+
+[MinusKelvin] Ah, yeah, I had a better example then.
+
+How do I set a UCI string option to literal "<empty>"? since "<empty>" is
+actually empty string.
+
+[analog hors] agony
+
+[Mathmagician]
+> Like, how am I supposed to parse "setoption name Stupid value value value"?
+In my opinion "value" as a single word shouldn't be allowed in an option name,
+so you could have "DrawValue" or "Draw_Value", but not "Draw value". That's
+also the way I've implemented it for my UCI handlers: it basically just goes
+through each word and breaks when it reaches value.

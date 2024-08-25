@@ -1,0 +1,33 @@
+# 2024 Mar 6
+
+[Mathmagician] I took a quick look at the first draft, you seem to have made
+similar decisions to what I did for my variant UCI spec.
+
+From the miscellaneous questions: how large the numeric arguments can be is
+actually somewhat important. I had my maximum supported hash size as 2 ^ 32,
+but that broke cutechess.
+
+For multiple search limits, my engine stops once any of them are met.
+
+[En-En] Interesting. I dug up the original which has proved very useful for
+designing my own interfacer. The FSM diagram is particularly invaluable. I'll
+double-check it a bit later and see if there are any comments I feel the need
+to make.
+
+[Mathmagician] One thing that would be good (if possible) would be a program to
+test compliance with the standard.
+
+[toanth] That would be amazing. But probably a lot of work I guess.
+
+[Mathmagician] Yeah, and it might not be possible to test every part of it.
+
+[expo] Yes! this is my actual ultimate goal – the thing I actually care about
+making. And I think it's doable. (Maybe not testing compliance with every part,
+but with most parts.)
+
+[Twipply] SF fails.
+
+[analog hors] Obviously impossible. SF passes by default because whatever spec
+becomes popular must be built to make its behaviour count as correct.
+
+[Twipply] "I am the standard" – SF.

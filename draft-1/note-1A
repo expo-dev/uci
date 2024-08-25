@@ -1,0 +1,162 @@
+# 2022 Dec 29
+
+[MinusKelvin] Some thoughts:
+
+− Needs an introduction giving a non-normative high-level overview of how UCI
+  works to aid in comprehension.
+
+− 1·3: ASCII requirement precludes placing my syzygy tablebase files in a folder
+  called "échecs" (French for chess), so this should probably be adjusted to
+  match 1·4.
+
+− Typically to deal with the whole "\n" vs "\r\n" thing specification authors
+  define a "line ending" to be either and then use "line ending" everywhere
+  else in the specification.
+
+− 2·5: I don't think "algebraic token" is a very clear term for this, I think it
+  should be called a "move token".
+
+− State machine is as I understand UCI 👍
+
+− Small bug: engine sending "bestmove" in the ping state needs to transition
+  to the sync state rather than the idle state. Otherwise, you allow "isready"
+  without a matching "readyok".
+
+− 3·5: I don't think it's a good idea to consider ill-formed messages as errors
+  rather than violations. Is there a reason for this? For extensions to UCI,
+  this could be advertised via options (like "UCI_Chess960").
+
+− I think that "the X may send any message" is not a good statement to make in
+  general, and the specification should be more explicit and restrictive in what
+  is allowed at any time.
+
+− Good rationale for gray statement at end of section 3. This could probably be
+  moved up a bit to the start of section 3.
+
+− Addressing the thing above, I think that
+
+− this breaks existing UCI, but I would not be opposed to requiring "isready" /
+  "readyok" after "uciok" to
+
+− 5 and 6: All of these should use a formal grammar to describe well-formedness.
+
+− 5·3: Should also note that receiving no protocol message before "uciok"
+  indicates old UCI.
+
+− How strings work needs to be specified more formally, or possibly completely
+  reworked. Edge case to consider:
+    option name Draw value type int min -1000 max 1000
+    option name Draw type string default <empty>
+    setoption name Draw value value 50
+  Am I setting "Draw value" to 50 or "Draw" to "value 50"?
+
+− 6·7: typo: missing word in "Limits, context items, and modifiers may appear
+  in [any] order".
+
+− A full specification should also reference FEN and describe the move format
+  more precisely (notably castling notation).
+
+− I would like to see specifications for common UCI extensions,
+  e.g. "UCI_Chess960" and "UCI_ShowWDL".
+
+− An appendix with common and fairly standardized engine options (e.g. "Hash",
+  "Threads", "SyzygyPath", "MultiPV") would also be nice.
+
+[expo]
+> Needs an introduction giving a non-normative high-level overview of how UCI
+> works to aid in comprehension.
+Will do!
+
+> 1·3: ASCII requirement [...] should probably be adjusted to match 1·4.
+Will do. In fact, you've pointed out what is simply a mistake – as written, it's
+possible for the engine to name an option that the client cannot use. I'm still
+not sure what the best way is to handle file paths, which on many systems are
+just a series of bytes (with only a few restrictions). Perhaps the best thing
+is relaxing the UTF-8 requirement for anything following "info string" and
+"option name ... value" (but still disallowing U+000A and U+000D, which seems
+like a reasonable restriction).
+
+> 2·5: I don't think "algebraic token" is a very clear term for this, I think it
+> should be called a "move token".
+I thought about this, but I was worried about confusing "'moves' token" (as in
+"'position startpos moves ...'") and "move token", and I also wanted to avoid
+any conflation of tokens and legal moves that those tokens may correspond to
+when interpreted as long algebraic notation. That was the thinking, anyway.
+
+> Small bug: engine sending "bestmove" in the ping state needs to transition
+> to the sync state rather than the idle state. Otherwise, you allow "isready"
+> without a matching "readyok".
+I actually hadn't thought to try to ensure that every "isready" is matched by
+a "readyok". My thinking was that "isready" could be answered with "bestmove",
+so that all three of these would be valid:
+  client send isready → eng send bestmove → eng read isready → eng send readyok
+  client send isready → eng read isready  → eng send readyok → eng send bestmove
+  client send isready → eng read isready  → eng send bestmove
+
+But yes! I agree that if we wanted to ensure that every "isready" is matched by
+a "readyok", there'd need to be a transition to sync from ping. (And I think
+that'd be enough? although I've yet to work through all the cases.)
+
+> 3·5: I don't think it's a good idea to consider ill-formed messages as errors
+> rather than violations. Is there a reason for this?
+This is for compatible with legacy client and engines – according to HMK,
+clients and engines should generally just ignore things they don't understand.
+Whereas when a violation occurs, all bets are off – these are fatal or
+unrecoverable, as it were (I mean, you can try to recover from them, but nobody
+who conforms to this specification is required to handle them). So the idea was
+to be selective about what was considered a violation (and to put most of that
+burden on clients, since there are far fewer clients than engines).
+
+> I think that "the X may send any message" is not a good statement to make in
+> general, and the specification should be more explicit and restrictive in what
+> is allowed at any time.
+The reasoning here was roughly the same as above. "The (engine|client) may send
+any message" simply means that an unexpected or malformed is not a _violation_
+(but in most cases is an error).
+
+> Good rationale for gray statement at end of section 3. This could probably be
+> moved up a bit to the start of section 3.
+Can do!
+
+> 5 and 6: All of these should use a formal grammar to describe well-formedness.
+This was a conscious decision, but it's definitely worth revisiting. I'll write
+out a version using more notation so we can see how it looks and compare the two.
+
+> 5·3: Should also note that receiving no protocol message before "uciok"
+> indicates old UCI.
+That's a really good idea! I'll add that.
+
+> option name Draw value type int min -1000 max 1000
+I had restricted all option integers to be nonnegative because I couldn't
+thinking of anything that needed negative integers, but this is an excellent
+counterexample. I'll widen the range to include negative integers.
+
+> Am I setting "Draw value" to 50 or "Draw" to "value 50"?
+I'll add something to address this. Good catch!
+
+> 6·7: typo: missing word in "Limits, context items, and modifiers may appear
+> in [any] order".
+Good catch!
+
+> A full specification should also reference FEN and describe the move format
+> more precisely (notable: castling notation).
+Will do.
+
+> I would like to see specifications for common UCI extensions,
+> e.g. "UCI_Chess960" and "UCI_ShowWDL".
+Agreed; I'll put this on the to-do list.
+
+> An appendix with common and fairly standardized engine options (e.g. "Hash",
+> "Threads", "SyzygyPath", "MultiPV") would also be nice.
+Agreed.
+
+Something related already came up in the TalkChess thread. I had come to the
+conclusion that engine options have to be implementation-defined (and more
+generally, that the specification should be concerned with syntax rather than
+semantics) given the diversity of engines now and potentially in the future.
+And in fact, I think it's simply impossible to formally define the semantics,
+since I don't think that that can be done in a way that's agnostic to clients'
+and engines' internal representations – the only thing that we can govern is
+outwardly observable behavior (the messages that the client and engine send).
+That said, providing additional recommendations (as comments) would be a really
+good thing – particularly things that would be helpful for new engine devs.

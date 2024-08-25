@@ -1,0 +1,109 @@
+#! /usr/bin/ruby
+
+require 'stringio'
+
+VERSION = "1.4.0"
+TEXFILE = ARGV[0]
+
+exit if ARGV.length != 1
+exit if not File.exist?(TEXFILE)
+
+TEXDIR = File.dirname(TEXFILE)
+
+$line = 0
+$error = ""
+
+def quit(msg)
+  puts("preprocess: #{$line}: #{msg}")
+  exit
+end
+
+def makeContext = binding
+
+def makeEnv
+  stdout = StringIO.new
+  context = makeContext()
+  return lambda do |src|
+    $stdout = stdout
+    begin
+      eval(src, context, TEXFILE, $line)
+    rescue ScriptError, StandardError => e
+      $error += "#{e.full_message}\n"
+    end
+    $stdout = STDOUT
+    out = stdout.string.dup
+    stdout.string = ""
+    return out
+  end
+end
+
+out = "\
+% This file was automatically generated.
+%       source: #{TEXFILE}
+%         time: #{Time.now}
+% preprocessor: #{__FILE__}
+% proc version: #{VERSION}
+% ruby version: #{RUBY_VERSION}
+"
+
+def nextStart(src)
+  sxn = src.index('\beginruby')   || Float::INFINITY
+  var = src.index('\\r{')         || Float::INFINITY
+  inc = src.index('\includeruby') || Float::INFINITY
+  start = [sxn, var, inc].min
+  return (start == Float::INFINITY ? nil : start)
+end
+
+src = File.read(TEXFILE)
+env = makeEnv()
+
+while sos = nextStart(src)
+  tex = src[0...sos]
+  $line += tex.count("\n")
+  out += tex
+  if src[sos..sos+2] == '\\r{'
+    src = src[sos+3..]
+    eos = nil
+    dep = 1
+    idx = 0
+    while idx < src.length
+      dep += 1 if src[idx] == '{'
+      dep -= 1 if src[idx] == '}'
+      if dep == 0
+        eos = idx
+        break
+      end
+      idx += 1
+    end
+    quit('missing closing delimiter') if eos.nil?
+    rb = src[0...eos]
+    out += env.call("print(#{rb})")
+    src = src[eos+1..]
+  elsif src[sos..sos+5] == '\begin'
+    quit('missing "ruby" after "\\begin"') if src[sos+6..sos+9] != 'ruby'
+    src = src[sos+10..]
+    eos = src.index('\endruby')
+    quit('missing "\\endruby"') if eos.nil?
+    rb = src[0...eos]
+    out += env.call(rb)
+    eos = src.index("\n", eos) || eos+7
+    src = src[eos+1..]
+  elsif src[sos..sos+7] == '\include'
+    src = src[sos+12..]
+    eos = src.index("\n") || 0
+    fn = src[0..(eos-1)].strip
+    path = File.join(TEXDIR, fn)
+    quit("\"#{path}\" does not exist") if not File.exist? path
+    quit("\"#{path}\" is not a regular file") if not File.file? path
+    rb = File.read(path)
+    out += env.call(rb)
+    src = (eos == 0 ? "" : src[eos+1..])
+  end
+end
+
+out += src
+if not $error.empty?
+  out += ?\n if out[-1] != ?\n
+  out += "% Error Transcripts\n#{$error}".split("\n").join("\n% ")
+end
+print out

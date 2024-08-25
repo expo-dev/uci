@@ -1,0 +1,11 @@
+# 2024 Mar 26
+
+[En-En] I was thinking more about point 1 as I got around to writing code
+related to it, so consider this an addendum. Newlines are the only possible way
+to delimit commands (or at least the ones which can use whitespace as a token).
+When I wrote point 1, I was thinking there would be some (probably very hacky)
+way of delimiting based on how output was flushed alone, but I/O on the OS level
+doesn’t remotely work like that. You probably should still aim to send messages
+within the same buffer, more for efficiency reasons than anything else, but I
+don’t think it’s strictly necessary, considering handling potentially long
+option commands would become awkward.

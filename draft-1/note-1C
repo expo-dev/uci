@@ -1,0 +1,1066 @@
+# 2022 Dec 30
+
+[hgm] I don't think this is a correct description of UCI as it is in common use.
+The official specs do not stipulate that a client cannot send anything after
+sending "stop" and before receiving "bestmove". Some existing clients in fact
+send "stop", "position", and "go ponder" simultaneously. The only thing that
+is forbidden is send other stuff to a searching engine before you send "stop".
+Similarly for "isready" / "readyok", except that there it is even allowed
+to send it to a searching engine. The "isready" command exists purely for the
+convenience of the client, for probing whether the engine is done processing all
+preceding commands (where a "go" command is considered processed after launching
+the search); the engine doesn't derive any rights from it (and in particular not
+the right to receive no input).
+
+Your state diagram also ignores that "go" is illegal without a preceding
+"position". It would be better to split the "idle" state into "idle" and
+"loaded", where "position" would cause the transition between the two.
+
+[expo]
+> The "isready" command exists purely for the convenience of the client; [...]
+> the engine doesn't derive any rights from it (and in particular not the right
+> to receive no input).
+The problem I see with HMK is that it leaves so many questions unanswered
+(which I've always found to be rather frustrating). Most of the ambiguity
+has to do with mixing synchronous and asynchronous interaction. Here a few
+questions, for example:
+
+• What should happen when the client sends "isready\n" twice in a single write,
+  or twice before the engine has a chance to read the pipe? is one "readyok"
+  sufficient, or does the engine need to send two replies? (Perhaps the
+  underlying question is, are some messages meant to be handled sequentially,
+  in a blocking manner, and some messages are meant to be handled as soon as
+  they are read, skipping ahead of "sequential" messages?)
+
+• HMK states that "isready" is used both "to wait for the engine to be ready
+  again" and "to ping the engine to find out if it is still alive". When is
+  it the former and when is it the latter? If the client sends "stop" and then
+  "isready" in immediate succession, and the engine is still calculating, once
+  the engine reads the message should it wait to answer with "readyok" until
+  after it has stopped (because "isready" was sent after "stop") or immediately
+  (because "when the engine is calculating [...] the engine should immediately
+  answer with "readyok" without stopping the search")?
+
+• Can the engine assume that the client will never send "setoption" while it is
+  calculating? That seems like a reasonable assumption, but HMK doesn't mention
+  it. If it does (suppose the client sends "stop" and "setoption" in immediate
+  succession, so that the engine recieves "setoption" while it is still
+  calculating, before it has had time to stop, or perhaps the client simply
+  sends "setoption" in the middle of a search), should the engine ignore the
+  "setoption" or apply the change once it has stopped?
+
+• HMK does not require the client to send "isready" before a search (only once
+  at the beginning to "wait for the engine to finish initializing"). HMK also
+  states that "if the engine receives a command which is not supposed to come,
+  for example "stop" when the engine is not calculating, it should also just
+  ignore it." By the same token, one might expect that the engine should ignore
+  "go" if it receives "go" during a search. If the engine recieves a go message
+  while it is still calculating (because the client sent "stop" and "go" in
+  immediate succession and the engine read the go message before it had halted),
+  should it ignore the "go" message? Or should it queue up an indefinite number
+  of go messages? Or just one? (Perhaps the underlying question is, for the
+  purposes of UCI, is the engine's current state defined by client messages
+  (either defined by client messages being sent or defined by client messages
+  being read), or defined by both client and engine messages, or is the engine's
+  state defined by unobservable, internal variables?)
+
+And I generally tried to resolve these sorts of questions in the simplest
+way I could think of. Admittedly, there was the intentional bias I mentioned:
+I generally picked solutions that simplified the implementation of engines.
+
+I had tried modeling the interaction between client and engine as a collection
+of events (client writes to a pipe, engine writes to a pipe, clients reads from
+a pipe, engine reads from a pipe) and happens-before relationships, but the
+diagram got rather ugly rather quickly.
+
+I usually think of message-passing between the client and engine as happening
+more or less instantaneously, but that's not actually the case, so the current
+model used by in draft was an attempt to present the client-engine system as
+having a single, coherent global state (rather than a disjoint pair of client
+and engine states) while still being consistent and technically correct.
+
+There is probably a better way to model it, though.
+
+> Some existing clients in fact send "stop", "position", and "go ponder"
+> simultaneously.
+This had crossed my mind, and one of the outstanding issues is the question,
+"Should the client be allowed to queue up messages in the halt state?" I'm not
+entirely sure how to reconcile this with the current model, where transitions
+occur when messages are sent, which is perhaps another indication that it needs
+some amount of rethinking.
+
+And I still need to get around to incorporating pondering.
+
+> Your state diagram also ignores that "go" is illegal without a preceding
+> "position".
+This was one of the intentional changes, meant primarily to simplify the
+state transition model (and secondarily to reduce the surface area of undefined
+behavior). In such cases, I generally tried to match the behavior of common
+engines (Stockfish and Komodo, for example).
+
+[Ras]
+> the question, "Should the client be allowed to queue up messages in the halt
+> state?"
+I do that because the client isn't allowed to send messages other than "stop"
+and "isready" during search anyway. The problem with discarding messages
+engine-side is that it opens bugs of wrongly discarding. I've seen a race
+condition in a number of engines with dedicated input thread and discarding
+that goes like this, usually when you run a tournament using all logical cores:
+• engine sends "bestmove"
+• engine gets scheduled away
+• client sends next command
+• engine input thread gets scheduled
+• engine input thread discards command
+• engine search (or main, or whatever) thread gets scheduled and sets the
+  "stop ignoring messages" flag for the input thread
+The result: if the engine ignores both the "position" and the "go" command,
+it will hang and lose on time while still reacting to "isready". If only the
+position command is ignored, but the flag setting arrives in time to process
+the go command, the engine calculates on the wrong position, i.e. the one from
+the turn before, and may put out a nonsensical or even illegal next bestmove.
+
+The quick and dirty fix is to first set the "accept messages" flag for the
+input thread and then printing the best move, but at that point, it's another
+race condition that would hit in if the client were to send a message between
+setting the flag and printing the bestmove. Not a problem in practice because
+clients don't do that, but then what's the point of having that ignore flag to
+begin with?
+
+So my solution is that my input thread always reads out the arriving messages
+and processes "stop", "quit", or "isready" immediately, but puts other messages
+in a queue that will be processed once the search ends. If I don't discard
+messages, I'll never erroneously lose some.
+
+[hgm]
+> What should happen when the client sends "isready\n" twice in a single write,
+> or twice before the engine has a chance to read the pipe? is one "readyok"
+> sufficient, or does the engine need to send two replies? (Perhaps the
+> underlying question is, are some messages meant to be handled sequentially,
+> in a blocking manner, and some messages are meant to be handled as soon as
+> they are read, skipping ahead of "sequential" messages?)
+I don't think there is any ambiguity here. Each "isready" will have to be
+answered with a "readyok" when its turn to be processed from the input stream
+comes up. I think it is pretty obvious that all messages should be handled
+sequentially, unless explicitly specified otherwise. Any protocol would
+degenerate to a total mess when commands would be allowed to be processed
+in an arbitrary order.
+
+The exception that is explicitly made states that "isready" must be replied to
+even when searching (which would be perceived out-of-turn by those who interpret
+the search and printing of "bestmove" as processing of the "go" command).
+
+> HMK states that "isready" is used both "to wait for the engine to be ready
+> again" and "to ping the engine to find out if it is still alive". When is
+> it the former and when is it the latter? If the client sends "stop" and then
+> "isready" in immediate succession, and the engine is still calculating, once
+> the engine reads the message should it wait to answer with "readyok" until
+> after it has stopped (because "isready" was sent after "stop") or immediately
+> (because "when the engine is calculating [...] the engine should immediately
+> answer with "readyok" without stopping the search")?
+I also see no ambiguity there. It is for what the client wants to use it for.
+The protocol specs are not a tutorial for how to develop clients. The specs just
+say how the comment should be responded to by an engine: "readyok" indicates the
+engine is ready to process any allowed incoming command immediately. The client
+can use this for any purpose it sees fit. During search the only allowed
+commands are "stop" or "ponderhit", and the engine should always be ready to
+start processing those without delay. After receiving "stop" the engine is by
+definition no longer searching/calculating. If it needs time to kill its search
+threads, during which it is not ready for processing (as opposed to receiving!)
+the next command (presumably a position-moves), it should defer the "readyok"
+(replied to an "isready" it received after the "stop" command) until it is.
+
+Usually clients would not be interested to know how much time the engine uses
+here, though, as the time for winding down the ponder search would simply be
+counted against the clock of the engine, which would start to run when the
+client send the "go" command for the next move. (And not when it pleases the
+engine to start that search).
+
+> Can the engine assume that the client will never send "setoption" while it is
+> calculating? That seems like a reasonable assumption, but HMK doesn't mention
+> it. If it does (suppose the client sends "stop" and "setoption" in immediate
+> succession, so that the engine recieves "setoption" while it is still
+> calculating, before it has had time to stop, or perhaps the client simply
+> sends "setoption" in the middle of a search), should the engine ignore the
+> "setoption" or apply the change once it has stopped?
+As far as the client is concerned an engine is only calculating between the
+"go" and the "stop" command. So yes, clients can send "stop" and "setoption" in
+immediate succession. (The need to set the option could actually have been the
+reason for sending the "stop" during pondering, so this is in fact a likely
+scenario.)
+
+> HMK does not require the client to send "isready" before a search (only once
+> at the beginning to "wait for the engine to finish initializing"). HMK also
+> states that "if the engine receives a command which is not supposed to come,
+> for example "stop" when the engine is not calculating, it should also just
+> ignore it." By the same token, one might expect that the engine should ignore
+> "go" if it receives "go" during a search. If the engine recieves a go message
+> while it is still calculating (because the client sent "stop" and "go" in
+> immediate succession and the engine read the go message before it had halted),
+> should it ignore the "go" message?
+Of course not. It is not a command that "is not supposed to come". You confuse
+"calculating" with "wasting time for internal reasons". As soon as an engine
+receives "stop", it is no longer "calculating" in the sense of the protocol, and
+whatever it is doing is just "processing of the previous command (stop)". There
+is no rule that you cannot send commands before processing of a previous command
+finishes. If there was, clients would have to poll the engine with "isready" and
+wait for the "readyok" before every command other than "go".
+
+> Or should it queue up an indefinite number of go messages?
+Of course it should queue up an indefinite number of commands. Not doing that
+would be tantamount to randomly ignoring commands from the input stream just
+because they happened to arrive at a moment when the engine was still working
+on processing a previous command. Clients in general would not know when that
+occurs. Normally you would not even have to think about this, because the
+pipe mechanism in the operating system does it. All commands are queued in the
+pipe, and the engine reads them away one by one, and processes them as soon as
+it reads them. It will be impossible for the engine to determine how long a
+command has been waiting in the pipe.
+
+> Or just one? (Perhaps the underlying question is, for the purposes of UCI,
+> is the engine's current state defined by client messages (either defined by
+> client messages being sent or defined by client messages being read), or
+> defined by both client and engine messages, or is the engine's state defined
+> by unobservable, internal variables?)
+As clients and engines cannot know each other's timing of events, I don't see
+how it could be any other than that, as far as the client is concerned, the
+state of the engine is determined by the commands the client sends, while for
+the engine the state is defined by the commands the engine receives. It seems
+to me that any other interpretation would need violation of the laws of nature,
+and thus is probably not what was meant.
+
+I don't see how the existing specs leave any of these issues undefined. But I
+see how your description (in particular the state diagram) conflicts with the
+original specs. So it is just not a description of UCI.
+
+[hgm]
+> So my solution is that my input thread always reads out the arriving
+> messages and processes "stop", "quit", or "isready" immediately, but puts
+> other messages in a queue that will be processed once the search ends.
+> If I don't discard messages, I'll never erroneously lose some.
+This sounds wrong, because it opens the possibility for "isready" to be
+processed out of order. While its very purpose could have been to test whether
+all preceding command (which you have in fact queued) have been processed.
+
+I also don't see why you would have to do any explicit queueing. The simple
+implementation would be to just read the commands one by one from stdin, and
+only start reading the next command when the engine is done processing the
+previous one. This would happen naturally for commands processed by the input
+thread itself (like "setoption" and such). The only case I see where you would
+have to wait for an internal event is after "stop", where you might want to
+wait for the search threads to acknowledge that they indeed have all stopped.
+(This would usually be after one of them had printed "bestmove", even though
+that is not strictly necessary.) So then you simply do not read input until
+this is acknowledged.
+
+You might argue that this would make it impossible to react to a "quit" command
+when the search fails to properly stop. But this indicates a crash, and it is
+questionable whether the engine would be able to properly execute a "quit"
+command in that case. If you worry about that you could have the input thread
+apply a timeout to its waiting for the stop acknowledgement, and quit the engine
+spontaneously (perhaps with an error message "fails to stop").
+
+[Ras]
+> This sounds wrong, because it opens the possibility for "isready" to be
+> processed out of order. While its very purpose could have been to test whether
+> all preceding command (which you have in fact queued) have been processed.
+That's why I have additional logic for commands that may not be finished
+instantaneously: "ucinewgame" and changing the hash table size. That's because
+"ucinewgame" clears the entire hash table while reallocating it not only does
+calloc, but also forcefully writes data and then clear the tables again. That
+forces the OS to actually blend in the pages instead of just having them mapped
+to the zero page and doing the remap later in search at the expense of engine
+performance.
+
+> I also don't see why you would have to do any explicit queueing.
+Because "isready" has to be answered at all times, also during search, and the
+clean way is a dedicated input thread. So what if the engine has received the
+"go" command and is calculating? Process the commands and discard all that are
+not "stop" or "isready"? See my posting above why I don't do it that way.
+
+[expo]
+> I think it is pretty obvious that all messages should be handled sequentially,
+> unless explicitly specified otherwise.
+One of my goals is to remove the need for subjective judgments, whether obvious
+or not, because obviousness varies from person to person and sometimes intuitive
+interpretations fall apart in unusual circumstances.
+
+For example, you wrote that "[e]ach 'isready' will have to be answered with a
+'readyok' when its turn to be processed from the input stream comes up." HMK
+does not mention queues, streams, or pipes. Although the engine's stdin and
+stdout will likely be pipes, it's not explicit that the engine should ~~handle
+some messages as soon as they are read and divert some messages to a queue, and
+that messages cannot be coalesced even if the stated purpose of the message
+would still be accomplished.~~ Edit: this is incorrect; the proper model seems
+to be that all messages are queued but some are contextually nonblocking
+(e.g. in between a "go"-"stop" pair, "isready" is nonblocking, but after
+"stop" or between "stop" and "go", it is blocking), where "nonblocking" means
+"requiring immediate response" and "blocking" means "causing message processing
+to be paused until a moment at the engine's discretion" (that is, contingent on
+some internal state of the engine).
+
+> During search the only allowed commands are "stop" or "ponderhit".
+This is not stated in HMK, in fact!
+
+> After receiving "stop" the engine is by definition no longer searching.
+But "searching" isn't defined in HMK!
+
+It's actually a term I avoided using, because there may be some engines that
+don't perform a search but simply return the top recommendation of a policy
+network.
+
+> Of course not. It is not a command that "is not supposed to come". You confuse
+> "calculating" with "wasting time for internal reasons". As soon as an engine
+> receives "stop", it is no longer "calculating" in the sense of the protocol,
+> and whatever it is doing is just "processing of the previous command (stop)".
+This isn't a confusion on my part; it was an attempt to point out that the
+specification never defines "calculating". The difference between calculating
+and wasting time cannot be part of a protocol, because protocols are merely
+rules of communication and cannot refer to the internal state of the engine
+(because internal representations may differ from engine) or the host device
+(is the engine calculating when its processor usage is above 10%? above 5%?
+and so on). So you could infer that "calculating" must be defined in terms of
+messages sent, but this is contradicted by the choice of term; "calculating"
+strongly suggests some internal condition of the engine. The same goes for
+the term "searching".
+
+> As clients and engines cannot know each other's timing of events, I don't see
+> how it could be any other than that, as far as the client is concerned, the
+> state of the engine is determined by the commands the client sends, while for
+> the engine the state is defined by the commands the engine receives.
+This is why the model currently used in the draft does not attempt to define
+the state of the engine or client; state is a global property and the transition
+rules are designed to ensure consistency regardless of the time between when
+messages are enqueued and when they are dequeued. (This is mentioned in the
+comment beginning at the bottom of page 5.)
+
+> I don't see how the existing specs leave any of these issues undefined. But I
+> see how your description (in particular the state diagram) conflicts with the
+> original specs. So it is just not a description of UCI.
+I'd contend that there is no such thing as UCI – or less dramatically, that the
+term UCI is descriptive, rather than prescriptive, referring to a collection of
+behaviors that several programs have rather than a precise protocol. I don't
+think UCI can be defined as "whatever Shredder does", because I don't believe
+this is what most people have in mind. What I suspect most people have in
+mind is "my engine supports UCI if it mostly works with cutechess or the 'UCI'
+clients that I use" or "my client supports UCI if it mostly works with Stockfish
+and other 'UCI' engines that I use" and so on. Which is a workable definition,
+but one that I think can be improved upon, because I've seen implementation
+divergence and confusion (myself, for one).
+
+But this is beside the point, and you're entirely right: this formalization
+conflicts with the behavior of existing clients in a few ways (where legacy
+engines will work with new clients but legacy clients may not work with new
+engines). So maybe it should have a slightly different name.
+
+[hgm]
+> Because "isready" has to be answered at all times, also during search, and the
+> clean way is a dedicated input thread. So what if the engine has received the
+> "go" command and is calculating? Process the commands and discard all that are
+> not "stop" or "isready"? See my posting above why I don't do it that way.
+Isn't that what the UCI specs prescribe? "If the engine receives a command which
+is not supposed to come, it should also just ignore it." During search commands
+other than "isready", "stop", or "ponderhit" are not supposed to come.
+
+So how is queueing them anything other than non-compliance?
+
+And "isready" doesn't have to be answered at all times. It has to be answered
+when all commands received before it have finished processing. That is the
+entire point of sending "isready" after setting the options at startup; options
+like "Hash" or tablebase loading might take a long time, and the client doesn't
+want to start the engine's clock before the latter has finished that. Replying
+with "readyok" before that time would defeat the purpose.
+
+[Ras]
+> Isn't that what the UCI specs prescribe? "If the engine receives a command
+> which is not supposed to come, it should also just ignore it." During search
+> commands other than "isready", "stop", or "ponderhit" are not supposed to
+> come.
+That's the ideal case. In practice, see the posting with the race conditions.
+
+> So how is queueing them anything other than non-compliance?
+That's a non-compliance without functional impact as long as everything works as
+it should. The risk for race conditions and erroneous discard would have
+functional impact and be even less compliant.
+
+> And "isready" doesn't have to be answered at all times.
+Yeah, with or without search, and in particular during search, that's what I
+meant.
+
+> Replying with "readyok" before that time would defeat the purpose.
+Correct. Please read the posting that you just replied to ;)
+
+[hgm]
+> That's the ideal case. In practice, see the posting with the race conditions.
+This has nothing to do with race conditions. Race conditions do not alter the
+order in which commands arrive at a given destination. They only apply to the
+timing of traffic in different directions.
+
+[Ras]
+> This has nothing to do with race conditions. Race conditions do not alter the
+> order in which commands arrive at a given destination. They only apply to the
+> timing of traffic in different directions.
+Please see my first posting in this thread where I explained what exactly I was
+referring to.
+
+[hgm]
+> One of my goals is to remove the need for subjective judgments, whether
+> obvious or not, because obviousness varies from person to person and
+> sometimes intuitive interpretations fall apart in unusual circumstances.
+Well, very nice. But then just supplement the official specs with a few
+sentences stating the obvious. But don't mislead people in a way that would
+cause their engine to fail.
+
+> For example, you wrote that "[e]ach 'isready' will have to be answered with
+> a 'readyok' when its turn to be processed from the input stream comes up."
+> HMK does not mention queues, streams, or pipes. Although the engine's stdin
+> and stdout will likely be pipes, it's not explicit that the engine should
+> ~~handle some messages as soon as they are read and divert some messages to
+> a queue, and that messages cannot be coalesced even if the stated purpose of
+> the message would still be accomplished.~~ Edit: this is incorrect; the proper
+> model seems to be that all messages are queued but some are contextually
+> nonblocking (e.g. in between a "go"-"stop" pair, "isready" is nonblocking, but
+> after "stop" or between "stop" and "go", it is blocking), where "nonblocking"
+> means "requiring immediate response" and "blocking" means "causing message
+> processing to be paused until a moment at the engine's discretion" (that is,
+> contingent on some internal state of the engine).
+Sorry, but this is all complete nonsense. Stdin and stdout are streams. They
+can only be read in sequential order. Whether the input is a pipe or not is also
+irrelevant; when it would be the keyboard the program also doesn't get to see
+what you typed last before it has read away what you typed first. Engines cannot
+execute commands that they have not read yet. The engine is not in any position
+to decide what the "stated purpose of the message" would be; Clients can send
+commands for purposes only known to themselves. The blocking/non-blocking claims
+are simply false. Between "go" and "stop" an "isready" can also be blocking: the
+"go" might take some time to set up the search (creating and initializing search
+threads, clearing the hash table), and the "isready" should not be replied to
+before it is done with that and ready to receive and execute a "stop". Why is
+it so hard to believe that an engine should reply to "isready" only when it is
+ready?
+
+> This is not stated in HMK, in fact!
+Well, what other commands did you have in mind, then? There aren't that many
+client-to-engine commands, and "setoption" is the only one that makes sense
+in this context. And for that the specs say: "this will only be sent when the
+engine is waiting." Is there any doubt that an engine that is calculating or
+searching is not waiting?
+
+In fact the specs do explicitly state that a "debug" command can come while
+thinking. So I should add that to the list of allowed commands. Never any reason
+to defer its execution, though, as it is obviously only intended to set some
+flag that controls the amount of output the engine produces during thinking.
+So it can and should always be executed immediately. If it is implemented at
+all; otherwise it is just ignored.
+
+It seems to me that "uci" is only "supposed to come" at startup, and "register"
+only on the engine's request. That only leaves "ucinewgame", "position" and
+"go", which would all be highly disruptive to a search in progress. (Or isn't
+that obvious enough?)
+
+> But "searching" isn't defined in HMK!
+> It's actually a term I avoided using, because there may be some engines that
+> don't perform a search but simply return the top recommendation of a policy
+> network.
+Well, I used it as synonymous for "calculating" that is used in the specs. If
+you want to state the obvious, just add the sentence "calculating is what the
+engine does between executing the 'go' and the 'stop' command, or its unprompted
+production of a 'bestmove' output".
+
+> This isn't a confusion on my part; it was an attempt to point out that the
+> specification never defines "calculating". The difference between calculating
+> and wasting time cannot be part of a protocol, because protocols are merely
+> rules of communication and cannot refer to the internal state of the engine
+> (because internal representations may differ from engine) or the host device
+> (is the engine calculating when its processor usage is above 10%? above 5%?
+> and so on). So you could infer that "calculating" must be defined in terms of
+> messages sent, but this is contradicted by the choice of term; "calculating"
+> strongly suggests some internal condition of the engine. The same goes for
+> the term "searching".
+It should be obvious that executing commands takes non-zero time, even when
+it is only very little. And that sometimes it can be a lot (e.g. loading EGT).
+In the specs not all such time usage is considered "calculating", however. The
+latter term is reserved for what the engine does to find a move in response to
+a "go" command.
+
+> This is why the model currently used in the draft does not attempt to
+> define the state of the engine or client; state is a global property and
+> the transition rules are designed to ensure consistency regardless of the
+> time between when messages are enqueued and when they are dequeued. (This
+> is mentioned in the comment beginning at the bottom of page 5.)
+In real life the state is a product of client and engine state, and both
+sending and receiving messages causes state change. If you are ignoring that
+you are certainly not talking about a global property. It seems to me that you
+are talking about the state of just one of the agents, which happen to have the
+same state diagram. But that for the engine the transitions occur when incoming
+messages are received, and outgoing ones sent, while for the client transitions
+it is just the other way around.
+
+[hgm]
+> Please see my first posting in this thread where I explained what exactly I
+> was referring to.
+It seems to me this is just a problem caused by clearing the "ignore input flag"
+and sending "bestmove" in the wrong order. Like you say, the "ignore input flag"
+should never have an effect when dealing with a compliant client. So the risk
+that you would receive a position-go that would have had to be ignored by
+clearing the flag early is virtually non-existent.
+
+[Ras]
+> It seems to me this is just a problem caused by clearing the "ignore input
+> flag" and sending "bestmove" in the wrong order.
+The observed problem arises when doing that in the seemingly obvious order: send
+"bestmove", then clear the flag. But doing it the other way around also has its
+own race condition, and that's non-trivial:
+• engine clears the ignore flag
+• engine sends "bestmove"
+• the engine search gets scheduled away before actually exiting or finishing
+• the next "go" comand arrives and a new search is spawned
+• the old search threads get rescheduled and do final cleanup that may conflict
+  with the other, freshly spawned search
+
+My conclusion was that the easiest and most reliable way of avoiding any sort
+of that problem is simply not having such an ignore flag to begin with. You
+won't notice such issues with a slow GUI such as Arena, but testing with the
+fast and unforgiving c-chess-cli while using all logical cores will run into
+such problems easily. I've seen that with several engines.
+
+The only loophole I have is when a hash table resize arrives during search which
+will be queued up, but since that's a non-trivial command that may take time,
+the input thread will wait for confirmation from the worker (main) thread. That
+won't come as long as that thread is in search. Hence, the input thread uses a
+5 second timeout and will just continue without confirmation so that the input
+thread will answer subsequent isready instead of blocking. The hash table resize
+will be executed after the current search ends.
+
+> Like you say, the "ignore input flag" should never have an effect when dealing
+> with a compliant client.
+But if I am free to assume that the client will be compliant, then buffering the
+messages will not cause any functional noncompliance, either, because the whole
+issue revolves around tight timing of correct command sequences.
+
+My engine actually pushes these cases accidentally because I have several
+conditions for quick responses using nearly no thinking time so that, for the
+other engine, the time between sending its bestmove and receiving the next
+position command can be extremely short. I'm also bypassing the whole C standard
+library for extra I/O performance, geared towards games at 1s/game with no
+increments.
+
+[hgm]
+> The observed problem arises when doing that in the seemingly obvious order:
+> send "bestmove", then clear the flag. But doing it the other way around also
+> has its own race condition, and that's non-trivial.
+I would consider clearing the flag after sending "bestmove" the obvious way
+not to do it, because it invites the race condition: after "bestmove" you
+can get commands that should not be ignored, and there is no guarantee that
+the flag will be cleared before you receive them. And for the example of the
+opposite case: this would also be avoided by sending "bestmove" only after
+all threads have cleaned up. I guess doing otherwise would be cheating anyway:
+in a non-ponder game engines are not supposed to do anything other than waiting
+for input on the opponent's turn, which starts as soon as they send bestmove.
+
+> But if I am free to assume that the client will be compliant, then buffering
+> the messages will not cause any functional noncompliance, either, because the
+> whole issue revolves around tight timing of correct command sequences.
+Perhaps not, but it is totally needless code complexity. If you would only send
+"bestmove" after the search has cleaned up, you would not have to do any such
+thing, and be still resistant to non-compliant client behavior. (Not that the
+latter would help you getting sensible results under a rogue client...)
+
+[Ras]
+> Perhaps not, but it is totally needless code complexity.
+Code complexity, yes, but not needless. Since race conditions are nasty to
+debug, and their absence cannot be proven through testing, I prefer a design
+that will never lose messages simply because it doesn't discard any to begin
+with. Even if it's not strictly in line with the protocol definition, as long
+as it doesn't introduce new problems at functional level.
+
+[Fulvio] Let's recap it simply. The engine enters "search mode" after receiving
+"go" and return to "wait mode" just before sending "bestmove". In "search mode"
+the direction of communication is reversed. The engine repeatedly sends "info
+messages" and the client is only allowed to send "stop" to ask the engine to
+return to "wait mode".
+
+[hgm]
+> Let's recap it simply.
+There is a problem with that definition, because it delimits the "search mode"
+(which the description calls "calculating") by communication events in opposite
+directions. This can lead to race conditions. A specification that would cover
+existing practice would say:
+
+  A "go" command will bring the engine in the "calculating" state, during which
+  it is not allowed to send it any other commands than "stop", "ponderhit",
+  "debug", and "isready" (and perhaps "quit"). This limitation lasts until the
+  "stop" command or the "bestmove" command (whichever comes earlier).
+
+And as for stating the obvious:
+
+  An engine should execute allowed commands in the order it receives those.
+  It should not start executing a command before execution of all previous
+  commands has been completed, but should never delay execution any further
+  than that. Commands that are not allowed when their turn for execution comes
+  up should be ignored. Each of the other commands should be executed as per
+  their specification. It is not allowed to ignore commands just because the
+  engine feels their purpose has already been accomplished.
+
+  A "go" command is considered executed as soon as the engine has started
+  up calculation of the new move. Processing of subsequent commands must
+  start immediately after that, and not wait for this calculation to finish.
+  A "stop" command is considered executed when the engine would be ready to
+  initiate calculation of a new move.
+
+[syzygy]
+> This is not stated in HMK, in fact!
+Maybe not, but this is how UCI is universally understood. The philosophy of UCI
+is to make things easy for the chess engine programmer (and thus hard for the
+client programmer). There is no need for the chess engine to queue received
+commands.
+
+> But "searching" isn't defined in HMK!
+The engine is searching between receiving "go" and "stop".
+
+It is true that the UCI "specification" is severaly lacking, but there is a lot
+of common understanding of how it is to be understood. It does not seem to be
+a good idea to plug the holes in the description in a way that is incompatible
+with the common understanding.
+
+[syzygy]
+> An engine should execute allowed commands in the order it receives those.
+> It should not start executing a command before execution of all previous
+> commands has been completed, but should never delay execution any further
+> than that. Commands that are not allowed when their turn for execution comes
+> up should be ignored. Each of the other commands should be executed as per
+> their specification. It is not allowed to ignore commands just because the
+> engine feels their purpose has already been accomplished. A "go" command is
+> considered executed as soon as the engine has started up calculation of the
+> new move. Processing of subsequent commands must start immediately after that,
+> and not wait for this calculation to finish. A "stop" command is considered
+> executed when the engine would be ready to initiate calculation of a new move.
+What does it mean to "execute" a command?
+
+CFish processes changes to the size of the hash table and the "LargePages"
+option by keeping track of their mosr recent settings, and then resizes or
+reallocates the hashtable (if necessary) only when something like "isready"
+is received. Processing each "setoption" separately might lead to unnecessary
+memory fragmentation.
+
+There is no need for a protocol specification to prescribe how the engine should
+implement things.
+
+The UCI specification often states that if the client sends things at the wrong
+time, those things should be ignored. In my view this can be removed from the
+protocol. The client should simply behave correctly. If it does not, the engine
+is free to do what it wants.
+
+Another section that in my view makes no sense:
+> If the engine or the GUI receives an unknown command or token it should just
+> ignore it and try to parse the rest of the string in this line.
+> Example: "joho debug on\n" should switch the debug mode on given that joho is
+>          not defined; "debug joho on\n" will be undefined, however.
+What is the point of allowing (and ignoring) bogus at the beginning of a line?
+I can see that it might be useful (even if questionable) to allow the client to
+send non-UCI commands, which the engine may or may not understand. If the engine
+does not understand it, it should then just ignore the whole line, not try to
+make sense of what follows the unrecognised command.
+
+If the client wants the engine to turn debug mode on, it will send "debug on\n".
+It will not send "joho debug on\n" or "debug joho on\n". If the client sends
+"joho debug on\n" and the engine does not recognise the "joho" command, there
+is no reason for the engine to assume that the GUI wants the engine to turn
+debug mode on.
+
+[hgm] I suppose that in the implementation you mention execution of the
+"setoption" command is just storing the new value, while actually clearing
+the hash counts as execution of the "isready".
+
+There really is no mystery here; the prescribed behavior is just what you get
+when you read the commands from stdin by a blocking read call, and perform the
+action they require at that time (which can be ignoring it) before you start
+reading the next one. The only caveat is that "calculating" should be done in
+the background, and you should start reading stdin again as soon as you have
+started (after "go") or completely stopped (after "stop") that background task.
+
+[Ras]
+> The UCI specification often states that if the client sends things at the
+> wrong time, those things should be ignored.
+I think a better rewording would be that the engine may ignore these commands,
+not should. That would be a hint rather to client authors than to engine
+authors.
+
+> What is the point of allowing (and ignoring) bogus at the beginning of a line?
+I ignore that part of the spec outright because it makes no sense. The beginning
+of a line is always a command, and if the engine doesn't know a command, it
+should not try to execute whatever arguments follow as if they were commands.
+That's the wrong catagory, conflating commands with data. I don't see any
+beneficial use case for that, only the potential for future trouble in case
+of new commands.
+
+With the tokens however, there is one case where it can make sense: within the
+"go" command. If there were ever a new "go" parameter introduced, either as a
+text-only token (like "infinite") or as text+value token (like "depth"), then
+engines that don't know this new parameter should just ignore it, but evaluate
+the rest. That's why I did follow that part of the spec for the "go" command.
+Another case is engines with incomplete implementation. In particular, "mate"
+and "searchmoves" are mandatory, but missing in some engines.
+
+The problem with that potential use case is that UCI doesn't specify what
+the "go" baseline behaviour should be, i.e. "go" without any parameter. The
+consequence is that "go" followed by a new or non-implemented token as only
+parameter would run into inconsistent engine behaviour.
+
+Most of the "go" parameters (except "infinite") restrict the search amount in
+some way, so my baseline is no restrictions in time or depth. Pretty much like
+"go infinite", except that this also adds the requirement not to end the search
+until stop arrives. This is the same behaviour as Stockfish, and that could be
+clarified right in the spec.
+
+[hgm]
+> I think a better rewording would be that the engine may ignore these commands,
+> not should. That would be a hint rather to client authors than to engine
+> authors.
+I think this whole business of ignoring commands is just there to solve the
+race condition on a "stop" command versus a spontaneously terminating search.
+It would have been much better if the stop command was defined as a no-op
+in case the engine was not "calculating". There really is no other use case,
+unless you are dealing with a very sick client.
+
+[Ras]
+> It would have been much better if the stop command was defined as a no-op in
+> case the engine was not "calculating".
+I think that is the intention why "stop" is explicitely called out:
+> If the engine receives a command which is not supposed to come (e.g. "stop"
+> when the engine is not calculating), the engine should just ignore it.
+
+[syzygy]
+> I think a better rewording would be that the engine may ignore these
+> commands, not should. That would be a hint rather to client authors than to
+> engine authors.
+I would say the specification should make clear that the client may not send
+things at the wrong time. The engine is then free to crash or to be defensive
+when the client violates this.
+
+An exception should be made for cases where the major clients violate this
+requirement (and for cases where messages can cross each other, e.g. "stop" and
+"bestmove").
+
+> I ignore that part of the spec outright because it makes no sense. The
+> beginning of a line is always a command, and if the engine doesn't know a
+> command, it should not try to execute whatever arguments follow as if they
+> were commands. That's the wrong catagory, conflating commands with data. I
+> don't see any beneficial use case for that, only the potential for future
+> trouble in case of new commands.
+Exactly. I doubt that there are many engines, if any at all, that implement this
+part of the specification.
+
+> With the tokens however, there is one case where it can make sense: within the
+> "go" command. If there were ever a new "go" parameter introduced, either as a
+> text-only token (like "infinite") or as text+value token (like "depth"), then
+> engines that don't know this new parameter should just ignore it, but evaluate
+> the rest. That's why I did follow that part of the spec for the "go" command.
+> Another case is engines with incomplete implementation. In particular, "mate"
+> and "searchmoves" are mandatory, but missing in some engines.
+Interestingly the "debug joho on\n" example contradicts the earlier sentence
+that unknown tokens should be ignored but the rest parsed.
+
+> The problem with that potential use case is that UCI doesn't specify what
+> the "go" baseline behaviour should be, i.e. "go" without any parameter. The
+> consequence is that "go" followed by a new or non-implemented token as only
+> parameter would run into inconsistent engine behaviour.
+> Most of the "go" parameters (except "infinite") restrict the search amount
+> in some way, so my baseline is no restrictions in time or depth. Pretty much
+> like "go infinite", except that this also adds the requirement not to end the
+> search until stop arrives. This is the same behaviour as Stockfish, and that
+> could be clarified right in the spec.
+It seems to me that the requirement that "go infinite" must wait for "stop"
+before ending the search only complicates the implementation of the engine with
+zero benefit for the engine author. Stockfish had some race conditions here
+which were finally solved by adding an ugly busy wait. Of course it is now too
+late to change this part of the protocol, since clients probably depend on this
+behaviour in analysis mode.
+
+I agree that ignoring unknown/unexpected tokens in the "go" command (and in the
+other direction in the "info" command) makes sense, and most engines probably
+do this. A non-trivial question would be whether a "fixed" UCI spec should allow
+the client to add non-standard parameters to the "go" command. I would tend to
+say "no".
+
+[Fulvio]
+> It seems to me that the requirement that "go infinite" must wait for "stop"
+> before ending the search only complicates the implementation of the engine
+> with zero benefit for the engine author.
+I don't understand why this is so complicated. If the engine finishes early, it
+just has to do a blocking readline until it receives "stop".
+
+[Ras]
+> Stockfish had some race conditions here which were finally solved by adding
+> an ugly busy wait.
+I use an event driven blocking wait in search with go infinite that also wakes
+up once per second to print the status. That way, I avoid busy waiting and
+burning cycles for nothing.
+
+> Of course it is now too late to change this part of the protocol, since
+> clients probably depend on this behaviour in analysis mode.
+That's entirely possible.
+
+> A non-trivial question would be whether a "fixed" UCI spec should allow the
+> client to add non-standard parameters to the "go" command. I would tend to
+> say "no".
+Same for new stuff in the info part. Existing tournament software relies on
+the score for adjudication, and that would break with "score wdl value" or even
+worse, several values. That would require a WDL-engine to also transmit a "cp"
+score, at which point it can just stick with that anyway.
+
+In my opinion, the stability of the ecosystem is not considered as much as it
+should because that's a core feature of UCI – not making things nice on the
+line where nobody really cares that much. The only thing that can be fixed is
+clearing up some parts, but only in line with the existing common understanding.
+Otherwise, the cost of breaking the ecosystem is too high for little to no added
+value.
+
+[hgm] Of course using a separate input thread is just asking for trouble.
+For one it completely defeats the purpose of "isready" during search, namely
+to probe whether the engine is still alive. The input thread automatically and
+stupidly answers this always with "readyok", even if the search is completely
+dead.
+
+A much better design would have the main search thread periodically poll for
+timeout or pending input. And then deal with the input if there is any (i.e.
+reply to "isready", set its own abort flag on "stop", calculate its stopping
+time after "ponderhit", adjust the debug flag on "debug", and ignore everything
+else).
+
+[Ras]
+> A much better design would have the main search thread periodically poll for
+> timeout or pending input.
+Isn't that how that super ugly PeekNamedPipe hack came around? And also, the
+polling idea doesn't mean that the engine isn't hanging. It only means that it's
+not hanging in an area that doesn't include the polling.
+
+[syzygy]
+> I don't understand why this is so complicated. If the engine finishes early,
+> it just has to do a blocking readline until it receives "stop".
+But there will usually be an I/O thread doing the reading. So you need
+interthread synchronisation to get it right. This is possible but my point is
+that it needlessly complicates the life of the engine programmer, which is
+against the UCI philosophy.
+
+(Maybe there is a good reason for requiring that after "go infinite" the engine
+sends the bestmove only after receiving "stop", but I don't see it. It seems to
+me the client could simply save the received "bestmove" line until it needs it,
+or discard it if it has no use for it. If this complicates the life of the
+client programmer, then that is the point of UCI.)
+
+> However the problem with UCI is that it uses a varible number of tokens (for
+> example "infinite" is single, "depth" is composed of 2 tokens and "wdl" of 4
+> tokens). It is difficult to be sure that all the tokens of a new field would
+> be correctly ignored. In my opinion it is better to continue to use options
+> like "UCI_showWDL" to advertise new capabilities.
+Indeed.
+
+However, unknown tokens sent by the engine to the client in an "info" line seems
+less problematic than unknown tokens in the "go" command. The "info" line does
+not affect chess play, the "go" command does. It looks bad if an UCI-compliant
+engine loses on time because the client uses a non-standard token to set the
+time limit (e.g. when the player has selected a particular GUI menu option).
+
+To parse "info" with unknown tokens, the client can discard tokens, including
+numbers and other symbols, until it recognises a token such as "depth". This
+only goes wrong if an unknown token is followed by the "depth" token or some
+other known token as a parameter to that unknown token, and that should be
+something that is relatively easy to avoid.
+
+[syzygy]
+> Same for new stuff in the info part. Existing tournament software relies on
+> the score for adjudication, and that would break with "score wdl value" or
+> even worse, several values. That would require a WDL-engine to also transmit
+> a "cp" score, at which point it can just stick with that anyway.
+This is a good refutation of what I just wrote in response to Fulvio. Indeed
+the "info" lines can affect chess play if the client adjudicates based on the
+reported scores.
+
+> In my opinion, the stability of the ecosystem is not considered as much as it
+> should because that's a core feature of UCI – not making things nice on the
+> line where nobody really cares that much. The only thing that can be fixed is
+> clearing up some parts, but only in line with the existing common
+> understanding. Otherwise, the cost of breaking the ecosystem is too
+> high for little to no added value.
+We agree.
+
+[expo]
+> Old clients with new engines will break the score display or adjudication.
+It's already the case that engines need to choose to send "score cp" in order
+for e.g. autoresignation to work with a particular client; nothing requires
+engines to send this field. Specifying a format in which WDL information can be
+given (if an engine wants to give WDL information) would be unrelated.
+
+In general, the draft leaves the interpretation of search info to be
+implementation-defined.* Given that this is merely a protocol, the semantics
+of each message are left for clients and engines to decide. (However,
+recommendations for interpretation are given as comments.)
+
+*Almost necessarily, in most cases. For example, no two engines' centipawn units
+are identically scaled, and for example, it would be difficult to define depth
+or seldepth in a way that is comparable across all search algorithms and
+implementations (indeed, some engines may not even have searches). And the
+internal representations of engines are something I think a protocol
+specification oughtn't concern itself with (even if the choices made in a
+protocol's design are entirely made with the ease of engine implementation in
+mind).
+
+[hgm]
+> Isn't that how that super ugly peek-named-pipe-hack came around? And also,
+> the polling idea doesn't mean that the engine isn't hanging. It only means
+> that it's not hanging in an area that doesn't include the polling.
+And how much good is that going to do you? You would still have to wait out the
+entire game for a bestmove which would never come. The chances that an input
+thread ever crashes are virtually non-existent, so by implementing "isready"
+this way you have made its use during search completely pointless.
+
+A proper implementation of "isready" should check whether the search is still
+running, e.g. by having the search store the time it last checked the clock,
+and comparing whether that is not too long before the moment the "isready" was
+received.
+
+And what is so hacky about PeekNamedPipe? It is just a system call for testing
+in a simple way whether there is input waiting that you can read without
+blocking. Of course you can use an event-driven design, which uses a "select" to
+wait for both timer and input events, whichever comes first, instead of polling
+to get immediate notification. But that is way more complex, and in practice you
+can poll frequently enough without significantly slowing down the engine so that
+the poll delay is insignificant.
+
+[hgm]
+> And in light of that observation, a name like UCI version 2 seems perfectly
+> reasonable.
+As long as you make it clear that it is version 2 of the protocol, and not
+version 2 of the specification. Perhaps you could start the document with a
+sentence like, "Those who do not mind that their engine might not work on every
+UCI client can built it to the following specifications."
+
+[expo]
+> As long as you make it clear that it is version 2 of the protocol, and not
+> version 2 of the specification. Perhaps you could start the document with a
+> sentence like, "Those who do not mind that their engine might not work on
+> every UCI client can built it to the following specifications."
+Ah, that's a nice distinction! I'll add something to that effect.
+
+[Ras]
+> A proper implementation of "isready" should check whether the search is still
+> running, e.g. by having the search store the time it last checked the clock,
+> and comparing whether that is not too long before the moment the "isready"
+> was received.
+Yeah, or a watchdog-like thing where upon receiving "isready", the input thread
+sets some variable and replies once search has reset it, which it could do every
+so many nodes.
+
+> And what is so hacky about PeekNamedPipe?
+It's Windows-only, and using an input thread that is allowed to block on stdin
+is much simpler.
+
+[expo]
+> Over and over again: it's the ecosystem. It's not hard, but as long as you
+> refuse to consider the ecosystem or don't even see what that means, failure of
+> this UCIv2 is probably the best outcome of this endeavour.
+I believe I understand you; I think we're just talking past each other. I'm
+not trying to challenge the primacy of an ecosystem: a healthy ecosystem is
+absolutely necessary, because the actual experience using the software is the
+only thing that ultimately matters. My point is that the UCI ecosystem is
+already fragmented.
+
+There is variation in clients' and engines' interpretations of the informal
+specification, variation in strictness, and wide variation in feature support
+(go nodes, multipv, ...). For example, some clients require the pv to be at the
+end of info, some don't. Some clients require multipv to always be present when
+the pv is present, some don't. Some clients send "go depth 245" when they want
+an infinite search,* some send "go infinite".
+
+Clients and engines currently have different (incompatible) assumptions and
+requirements, so things are already broken. Codifying a particular behavior
+doesn't change that either way. (And it can never prevent people from making
+additions or modifications, or writing half-implementations.) However, it might
+make it easier for people to converge.
+
+Admittedly, if you restrict the "UCI ecosystem" to popular engines and clients
+that are 5 or more years old, it is probably less fragmented than what I observe
+working with brand new clients and new engines. I'm motivated by the observation
+that new engine developers often have to make fixes or write hacks whenever they
+want to use a new client.
+
+The indictment could be made, "they simply misunderstood the specification" or
+"they were lazy" or "they wrote an incorrect implementation", and those are all
+likely true! I'm interested in why that happens and what can be done to reduce
+the chance of it.
+
+What seems most useful for new engine and client developers is a set of tests
+that would tell you exactly what your engine (or client) does correctly and
+what it gets wrong. That first requires deciding exactly what may or may not
+be assumed by engines and clients. (So my ruckus about "protocol version 2"
+is mostly just a prelude to what I hope will be the beneficial thing.)
+
+I lean toward asking more from clients in order to simplify engine
+implementation because there are fewer clients than engines. I'm planning to
+reach out to client developers and ask them if they'd be willing to make their
+clients more careful or lenient (if needed), and then I want to help them in
+whatever way I can.
+
+At least, that's the long-term vision. I expect a project like this to take
+several years. And maybe, like you say, it would be better if it failed.
+
+*This happens to be Stockfish's maximum depth, so I assume that's where the
+number came from.
+
+[hgm] Whatever the specifications are, there will always be developers that
+violate those. The more precise and restrictive the specifications are, the
+more often they will be violated. The longer and more elaborate they are, the
+more people will not bother reading them, and consequently violate them.
+
+What would help is publish a maximally simple example of a correct
+implementation. Then all the lazy people that would not bother carefully
+reading specs would clone that.
+
+And it would probably be a good idea to develop a "malicious" client that
+subjects an engine to all kinds of nasty boundary cases, and detects in what
+aspects they fail.
+
+None of this seems to require a change in the protocol.
+
+[expo] I appreciate the discussion so far – it's been really useful and has
+changed my mind about a few things. It's also been somewhat disappointing,
+though, since by "feedback [on the draft]" I was asking for specific critiques.
+
+For example, things like "in 5·6, it says that 'lowerbound' and 'upperbound'
+have to come after 'cp int ', and all engines seem to do that, but clients
+should actually be required to handle both orderings because...".
+
+[syzygy]
+> This is more or less what I'm proposing (hence the "protocol" remark that the
+> draft introduces).
+I do think that formalizing the Universal Chess Interface, i.e. removing as
+much as possible the unclear and ambiguous parts of the specification while
+being ruthless in keeping compatibility with the major GUIs and as many engines
+as possible, could be a useful exercise. But clearly that is not what you are
+planning to do.
+
+By UCIv2 I don't mean an "improved" protocol specification but an extension of
+the protocol to introduce features missing from UCI (so UCI itself wouldn't have
+to be hacked and incompatibilities introduced). Instead of an UCIv2 option it
+could also be "UCI_<feature>" as Fulvio suggests. Basically how Chess960 is done
+in UCI: if the engine's "uci" command does not list "UCI_Chess960", the client
+will not do anything with it, and if the client does not set "UCI_Chess960",
+the engine will not do anything with it.
+
+[syzygy] If you do want to "complete" the spec of the UCI protocol and not
+produce a new protocol (that should then definitely not be called UCI), then
+I would say there is no fixed order except probably for "pv" being at the end.
+
+Give maximum freedom to the engine programmer as long as the major clients don't
+assume otherwise.
+
+[thomasahle]
+> For example, things like "in 5·6, it says that 'lowerbound' and 'upperbound'
+> have to come after 'cp int ', and all engines seem to do that, but clients
+> should actually be required to handle both orderings because...".
+I actually recently implemented this with "cp lowerbound int", I think, or maybe
+just "lowerbound cp int", I'm not sure. But it didn't work in any clients. I
+didn't understand why, since I thought I had followed the UCI protocol. So I
+thought it was just clients not supporting upper and lower bounds. Only when
+I saw how Stockfish did it, and copied that, did it suddenly work.
+
+I'm definitely a big fan of a more formal uci spec!
