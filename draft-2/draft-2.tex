@@ -287,6 +287,8 @@
 \centerline{\lcap8 UNIVERSAL CHESS INTERFACE}
 \centerline{\lcap4 september 2024 • draft}
 
+\vskip3\baselineskip
+
 {\bf Introduction}
 
 This specification governs the interaction between two processes named the
@@ -328,8 +330,8 @@ requirements of the specification. When a violation occurs, or when the
 requirements of the specification are otherwise not met, the specification
 imposes no further requirements on the behavior of the client or engine.
 
-\minor An \term{error} is a condition that should not occur but that is still
-governed by the specification.
+% \minor An \term{error} is a condition that should not occur but that is still
+% governed by the specification.
 
 \minor The engine's standard input and output must be open file descriptors and
 the engine's standard error must be an open file descriptor until closed by the
@@ -346,8 +348,8 @@ to its standard error.}
 \vskip-\parskip
 \bluebox{No particular encoding is specified: the client and engine streams are
 not required to be encoded sequences of Unicode scalar values (or code points
-of any character set). The specification instead governs the client and engine
-streams as sequences of bytes {\it per se}.\par
+of any other character set). The specification instead governs the client and
+engine streams as sequences of bytes {\it per se}.\par
 However, clients and engines are recommended to use {\caps utf-8} for
 client−engine communication so that engine, author, and option names are
 displayed properly. Note that clients and engines may use different encodings
@@ -357,7 +359,7 @@ over a network connexion and the client may be running on Linux (where paths
 are arbitrary byte sequences that do not contain \hex{00} or \hex{2f}) but the
 engine may be running on Windows (for which {\caps ntfs} is a common filesystem,
 which stores file names in {\caps utf-16}, but where older libraries or
-{\caps api}s may expect paths encoded in the local code page), and so the name
+{\caps api}s may expect paths encoded in the local code page), and so the path
 of a tablebase file may require transcoding, implicitly or explicitly.}
 
 \minor A \term{message terminator} is the pair ⟨\ot\hex{0d}, \hex{0a}⟩ or
@@ -392,7 +394,8 @@ of bytes.}
 or black and the \term{kind} is king, queen, rook, bishop, knight, or pawn).
 This array is called the \term{board} and is indexed along one axis by the
 letters “a” through “h” inclusive and along the other axis by the numerals
-“1” through “8”. A color−\allowbreak kind pair is called a \term{piece}.
+“1” through “8” inclusive. A~color−\allowbreak kind pair is called a
+\term{piece}.
 
 \vskip-0.5\parskip A color, white or black, called the \term{side to move}.
 
@@ -411,7 +414,7 @@ measured in ply.}
 
 }
 
-\vskip-0.5\parskip The \term{side waiting} in a position is the opposite color
+\vskip-0.5\parskip The \term{side waiting} of a position is the opposite color
 of the side to move.
 
 \minor For a given position, a king is \term{in check} if it is attacked by one
@@ -440,10 +443,10 @@ king is at index e8 and there is a black rook at index a8.
 
 \vskip-0.5\parskip If the en passant target is {\it n}\ot3 for some {\it n},
 then the side to move is black, there is a white pawn at index {\it n}\ot4,
-and at {\it n}\ot2 and {\it n}\ot3 the board contains {\caps none}. If the en
+and at {\it n}\ot2 and {\it n}\ot3 the board is {\caps none}. If the en
 passant target is {\it n}\ot6 for some {\it n}, then the side to move is white,
 there is a black pawn at index {\it n}\ot5, and at {\it n}\ot6 and {\it n}\ot7
-the board contains {\caps none}.
+the board is {\caps none}.
 
 \vskip-0.5\parskip The king of the color of the side waiting is not in check.
 
@@ -454,7 +457,8 @@ described in \the\majorcount·{\advance\minorcount by 2 \the\minorcount} below).
 }
 
 \vskip-\parskip
-\greybox{A valid position need not be reachable from the starting position.\par
+\greybox{A valid position (as defined above) need not be reachable from the
+starting position.\par
 Some engines designed for gameplay rather than analysis may additionally require
 that the positions they are sent must be reachable from the starting position.
 Such constraints are specific to engines, and are not constraints of the
@@ -462,12 +466,13 @@ Universal Chess Interface.}
 \vskip-\parskip
 \greybox{The 2023 {\caps fide} Laws of Chess state that the game ends
 immediately when a player cannot checkmate the king by any series of legal
-moves, but this condition does not cause a position to not be valid.}
+moves, but this condition does not cause a position to not be valid (as defined
+above).}
 \vskip-\parskip
-\bluebox{Engines are recommended to accept positions that are checkmate
-or stalemate even though they are not required to handle such positions.
-For such positions, engines should report the null move as the best move
-(see \the\majorcount·{\advance\minorcount by 7 \the\minorcount} below).}
+\bluebox{Engines are recommended to accept positions that are checkmate or
+stalemate even though they are not required to handle receiving such positions.
+For such positions, engines should report the null move as the best move (see
+\the\majorcount·{\advance\minorcount by 7 \the\minorcount} below).}
 
 \minor A \term{move} is either a tuple with two fields – a board index
 called the \term{source} and a board index called the \term{destination}
