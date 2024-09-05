@@ -285,14 +285,15 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 \centerline{\lcap8 UNIVERSAL CHESS INTERFACE}
-\centerline{\lcap4 august 2024 • draft}
+\centerline{\lcap4 september 2024 • draft}
 
 {\bf Introduction}
 
 This specification governs the interaction between two processes named the
 {\it client} and the {\it engine}. Graphical interfaces, terminal emulators,
-and scripts and utilities are examples of clients. Normative text begins with
-section 1 {\it Definitions}.
+and scripts and utilities are examples of clients. Normative text begins at
+the start of section 1 {\it Definitions} and ends after section 4 {\it Engine
+Messages}.
 
 {\bf Getting Started}
 
@@ -301,10 +302,10 @@ to add basic {\icap uci} support to their engine.}
 
 {\bf Conventions}
 
-An {\fw\color{\r{ltgrey_fg}}{x}} preceding a number indicates that it is written
-in hexadecimal; for example, \hex{10} = 16. Sequences of Unicode scalar values
-encoded in {\caps utf-8} are set in teal; for example, \s{u¢i} = ⟨\pt\hex{75},
-\hex{c2}, \hex{a2}, \hex{69}⟩\pt.
+An {\fw\color{\r{ltgrey_fg}}{x}} preceding a number indicates that it is
+written in hexadecimal; for example, \hex{10} = 16. Sequences of bytes encoded
+in {\caps ascii} are set in teal; for example, \s{uci} = ⟨\ot\hex{75}, \hex{63},
+\hex{69}⟩\pt.
 
 Special terms defined by the specification are set in \term{purple} when they
 are first introduced and inline comments are set \comment{after a reference
@@ -334,46 +335,259 @@ governed by the specification.
 \minor The engine's standard input and output must be open file descriptors and
 the engine's standard error must be an open file descriptor until closed by the
 engine. The sequence of bytes that the client sends to the engine via the
-engine's standard input is the \term{client byte sequence}. The sequence of
-bytes that the engine sends to the client via the engine's standard output
-is the \term{engine byte sequence}.
+engine's standard input is the \term{client stream}. The sequence of bytes
+that the engine sends to the client via the engine's standard output is the
+\term{engine stream}.
 \vskip-\parskip
 \greybox{There are no requirements for an engine's standard error except that it
 be open. For example, the engine's standard error may be directed to a null
 file, to the client's standard output or standard error, or to a log file. There
 are accordingly no restrictions on the sequence of bytes that the engine writes
 to its standard error.}
-
-\minor The client byte sequence and engine byte sequence must be valid
-\hbox{\caps utf-8}. The sequence of scalar values encoded by the client byte
-sequence is the \term{client scalar sequence} and the sequence encoded by the
-engine byte sequence is the \term{engine scalar sequence}.
 \vskip-\parskip
-\greybox{{\caps Utf-8} is required for client−engine communication, but the
-client and engine may use different encodings for other interfaces, such as
-specifying file system paths to the operating system in order to read tablebase
-files. For example, the client and engine may be communicating over a network
-connexion and the client may be running on Linux (where paths are arbitrary
-byte sequences that do not contain \hex{00} or \hex{2f}) but the engine may be
-running on Windows (for which {\caps ntfs} is a common filesystem, which stores
-file names in {\caps utf-16}, but where older libraries or {\caps api}s may
-expect paths encoded in the local code page).}
+\bluebox{No particular encoding is specified: the client and engine streams are
+not required to be encoded sequences of Unicode scalar values (or code points
+of any character set). The specification instead governs the client and engine
+streams as sequences of bytes {\it per se}.\par
+However, clients and engines are recommended to use {\caps utf-8} for
+client−engine communication so that engine, author, and option names are
+displayed properly. Note that clients and engines may use different encodings
+for other interfaces, such as for file system paths that are passed as arguments
+to the operating system. For example, the client and engine may be communicating
+over a network connexion and the client may be running on Linux (where paths
+are arbitrary byte sequences that do not contain \hex{00} or \hex{2f}) but the
+engine may be running on Windows (for which {\caps ntfs} is a common filesystem,
+which stores file names in {\caps utf-16}, but where older libraries or
+{\caps api}s may expect paths encoded in the local code page), and so the name
+of a tablebase file may require transcoding, implicitly or explicitly.}
 
-\minor A \term{message terminator} is the pair ⟨\uni{000d carriage return},
-\uni{000a line feed}⟩ or \uni{000a} alone when it is not preceded by \uni{000d}.
+\minor A \term{message terminator} is the pair ⟨\ot\hex{0d}, \hex{0a}⟩ or
+\hex{0a} alone when it is not preceded by \hex{0d}.
 
-\minor Message terminators divide the client and engine scalar sequences into
-\term{messages}; that is, a message is a (possibly empty) subsequence of scalar
-values that does not contain a message terminator and every scalar value of
-the client and engine scalar sequences is either part of a message or part of
-a message terminator. The messages within the client sequence are \term{client
-messages} and the messages within the engine sequence are \term{engine
-messages}.
+\minor Message terminators divide the client and engine streams into
+\term{messages}; that is, a message is a (possibly empty) subsequence of bytes
+that does not contain a message terminator and every byte of the client and
+engine streams is either part of a message or part of a message terminator.
+The messages within the client stream are \term{client messages} and the
+messages within the engine stream are \term{engine messages}.
+\vskip-\parskip
+\greybox{This precludes the proper use of some encodings, such as
+{\caps utf-16} (since in {\caps utf-16}, the byte \hex{0a} appears in the
+encodings of various scalar values, whereas in {\caps utf-8}, the byte
+\hex{0a} only appears in the encoding for \uni{000a line feed}).}
+
+\minor The byte \hex{20} divides messages into \term{tokens}, that is, a token
+is a non-empty sequence of bytes that are not \hex{20}, and every byte of a
+message is either part of a token or is \hex{20}.
+\vskip-\parskip
+\greybox{In some cases, only the beginning of a message will be viewed as a
+collection of tokens and the remainder will be viewed as a contiguous sequence
+of bytes.}
+
+\minor A \term{position} is a tuple with the following fields:
+
+{\leftskip=3ex
+
+\vskip-0.5\parskip An 8×8 array of elements, each of which is either
+{\caps none} or a color−\allowbreak kind pair (where the \term{color} is white
+or black and the \term{kind} is king, queen, rook, bishop, knight, or pawn).
+This array is called the \term{board} and is indexed along one axis by the
+letters “a” through “h” inclusive and along the other axis by the numerals
+“1” through “8”. A color−\allowbreak kind pair is called a \term{piece}.
+
+\vskip-0.5\parskip A color, white or black, called the \term{side to move}.
+
+\vskip-0.5\parskip A collection of values, called the \term{rights}, which may
+be empty or include one or more of the following: the white kingside castling
+right, the white queenside castling right, the black kingside castling right,
+and the black queenside castling right.
+
+\vskip-0.5\parskip A value called the \term{en passant target}, which is either
+{\caps none} or one of a3, b3, \ellipsis\ot, h3, or a6, b6, \ellipsis\ot, h6.
+
+\vskip-0.5\parskip A nonnegative integer called the \term{depth from zeroing},
+which is 100 or less. \comment{This is the number of moves that have been played
+(none of which are captures or pawn moves) since the last capture or pawn move,
+measured in ply.}
+
+}
+
+\vskip-0.5\parskip The \term{side waiting} in a position is the opposite color
+of the side to move.
+
+\minor For a given position, a king is \term{in check} if it is attacked by one
+or more pieces of the opposite color, where “attacked” is defined analogously to
+article 3.1.2 of the 2023 {\caps fide} Laws of Chess.
+
+\vfil\break
+
+\minor A position is \term{valid} if the following conditions are all satisfied:
+
+{\leftskip=3ex
+
+\vskip-0.5\parskip The board contains exactly one white king and one black king.
+
+\vskip-0.5\parskip The board does not contain any pawns at indices
+a1, b1, \ellipsis\ot, h1 and does not contain any pawns at indices
+a8, b8, \ellipsis\ot, h8.
+
+\vskip-0.5\parskip If the rights include the white kingside castling right, the
+white king is at index e1 and there is a white rook at index h1. If the rights
+include the white queenside castling right, the white king is at index e1 and
+there is a white rook at index a1. If the rights include the black kingside
+castling right, the black king is at index e8 and there is a black rook at
+index h8. If the rights include the black queenside castling right, the black
+king is at index e8 and there is a black rook at index a8.
+
+\vskip-0.5\parskip If the en passant target is {\it n}\ot3 for some {\it n},
+then the side to move is black, there is a white pawn at index {\it n}\ot4,
+and at {\it n}\ot2 and {\it n}\ot3 the board contains {\caps none}. If the en
+passant target is {\it n}\ot6 for some {\it n}, then the side to move is white,
+there is a black pawn at index {\it n}\ot5, and at {\it n}\ot6 and {\it n}\ot7
+the board contains {\caps none}.
+
+\vskip-0.5\parskip The king of the color of the side waiting is not in check.
+
+\vskip-0.5\parskip There is at least one valid move that can be applied (as
+described in \the\majorcount·{\advance\minorcount by 2 \the\minorcount} below).
+\comment{This means the position is not checkmate or stalemate.}
+
+}
+
+\vskip-\parskip
+\greybox{A valid position need not be reachable from the starting position.\par
+Some engines designed for gameplay rather than analysis may additionally require
+that the positions they are sent must be reachable from the starting position.
+Such constraints are specific to engines, and are not constraints of the
+Universal Chess Interface.}
+\vskip-\parskip
+\greybox{The 2023 {\caps fide} Laws of Chess state that the game ends
+immediately when a player cannot checkmate the king by any series of legal
+moves, but this condition does not cause a position to not be valid.}
+\vskip-\parskip
+\bluebox{Engines are recommended to accept positions that are checkmate
+or stalemate even though they are not required to handle such positions.
+For such positions, engines should report the null move as the best move
+(see \the\majorcount·{\advance\minorcount by 7 \the\minorcount} below).}
+
+\minor A \term{move} is either a tuple with two fields – a board index
+called the \term{source} and a board index called the \term{destination}
+– or a tuple with three fields: a~source, a~destination, and a kind called
+the \term{promotion kind} that is either queen, rook, bishop, or knight.
+
+\minor For a given position {\it P}, a move {\it M} is \term{valid} and the
+position {\it Q} \term{immediately follows} when {\it M} is \term{applied} if
+{\it P}, {\it M}, and {\it Q} fulfill requirements analogous to articles 3.1
+through 3.9 inclusive of the 2023 {\caps fide} Laws of Chess, except
+
+{\leftskip=3ex
+
+\vskip-0.5\parskip the requirement for a pawn to advance by two is instead that
+the pawn is white and its index is one of a2, b2, \ellipsis\ot, h2 or that the
+pawn is black and its index is one of a7, b7, \ellipsis\ot, h7, and
+
+\vskip-0.5\parskip the requirement for an en passant capture is instead that
+the en passant target is not none and the capturing pawn attacks the en passant
+target.
+
+}
+
+In particular, when {\it M} is valid, there is a piece of the color of the side
+to move in the board of {\it P} at the source of {\it M} and there is a piece
+of the same color and kind (or a piece of the same color and the promotion kind
+of {\it M}) in the board of {\it Q} at the destination of {\it M}.
+
+The side to move of {\it Q} is the opposite color of the the side to move of
+{\it P}. If {\it M} is a king or rook move, the rights of {\it Q} do not include
+the corresponding castling right or castling rights. If {\it M} advances a pawn
+by two, the en passant target of {\it Q} is the index between the source and
+destination of~{\it M}. If {\it M} is a capture or a pawn move, the depth from
+zeroing of {\it Q} is zero; otherwise, the depth from zeroing of {\it Q} is the
+depth from zeroing of {\it P} plus one.
+
+\def\rjust#1#2{\hbox to #1{\hfil #2}}
+\def\alt{\vrule height 7.125pt depth 1.375pt width 0.7pt}
+
+\minor A \term{Forsyth–Edwards Notation ({\caps fen}) record} is a sequence of
+six tokens ⟨{\it board, side to move, rights, {\icap ep} target, {\icap dfz},
+move number}⟩ of the form\par
+%
+\dimen0=5em
+\vskip-0.5\parskip\hskip3ex\rjust{\dimen0}{\it board}
+  \dt=\dt\ \r{(['{\it row}']*8).join('\pt\s/\pt')}\par
+\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it row}
+  \dt=\dt\ \s8 \alt\ [\s1–\s7\s{KQRBNPkqrbnp}]+\par
+\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it side to move}
+  \dt=\dt\ \s w \alt\ \s b\par
+\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it rights}
+  \dt=\dt\ \s- \alt\ \s K?\pt\s Q?\pt\s k?\pt\s q?\par
+  % \lower0.5pt\hbox{\notomono ∩} [\s{KQkq}]+)\par
+\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it {\icap ep} target}
+  \dt=\dt\ \s- \alt\ [\s a–\s h][\s{36}]\par
+\vskip-\parskip\hskip3ex\rjust{\dimen0}{\icap dfz}
+  \dt=\dt\ \s0 \alt\ [\s1–\s9][\s0–\s9]\lower0.25ex\hbox{*}\par
+\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it move number}
+  \dt=\dt\ [\s1–\s9][\s0–\s9]\lower0.25ex\hbox{*}\par
+\vskip-\parskip\hskip3ex
+  \comment{The dash “\s-” is \hex{2d}.}
+
+\vskip-0.5\parskip with the following additional constraints:
+
+{\leftskip=3ex
+
+\vskip-0.5\parskip In each {\it row}, numerals must not be adjacent; that is,
+there must not be two or more immediately consecutive numerals.
+
+\vskip-0.5\parskip For each {\it row},
+map \s K,\pt\s Q, \ellipsis\ot,\pt\s p to 1,
+map \s1,\pt\s2, \ellipsis\ot,\pt\s8 to 1,\pt2,\pt.\ot.\ot.,\pt8,
+and then define the width as the sum of these numbers.
+For each {\it row}, the width must be 8.
+
+\vskip-0.5\parskip The bytes \s K and \s k must each occur exactly once in
+{\it board}.
+
+\vskip-0.5\parskip The byte \s P must not occur in the first {\it row} and must
+not occur in the last {\it row}, and likewise for the byte \s p.
+
+\vskip-0.5\parskip The {\icap dfz} token interpreted as a decimal integer must
+be 100 or less.
+
+\vskip-0.5\parskip The {\it move number} token interpreted as a decimal integer
+must be less than 10\pt000.\par}
+
+\minor An {\caps fen} record \term{describes} a position if it maps to the
+position in a manner analogous to that described in article 16.1.3 of the
+Portable Game Notation Specification.
+
+\minor The \term{starting position} is the position described by the {\caps fen}
+record\hfil\penalty-10000
+\hbox{\s{rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1}}.
+
+\minor A \term{move token} is a token of the form
+\hbox{[\s a–\s h][\s1–\s8][\s a–\s h][\s1–\s8]} or\hfil\penalty-10000
+\hbox{[\s a–\s h]\s7[\s a–\s h]\s8[\s{qrbn}]} or
+\hbox{[\s a–\s h]\s2[\s a–\s h]\s1[\s{qrbn}]}.
+
+\minor A \term{null move token} is a token of the form \s{0000}.
+
+\major{\bf Client Messages}
+
+\major{\bf Engine Messages}
+
+\major{\bf States and Transitions}
+
+\major{\bf Notation}
+
+\vfil\break
+
+\major{\bf Examples}
 
 \vskip\parskip
 \beginruby
 format("let @read_byte! : File_Descriptor -> Byte | EOF")
 \endruby
+
 \vskip\parskip
 \beginruby
 format(%q{
@@ -382,6 +596,7 @@ def trimCR('seq : List(Byte)) : List(Byte)
   return withoutLast('seq)
 })
 \endruby
+
 \vskip\parskip
 \beginruby
 format(%q{
@@ -395,19 +610,7 @@ def read_message!('fd : File_Descriptor) : List(Byte) | EOF
 })
 \endruby
 
-\minor A message must not contain \uni{000d}; that is, every occurence
-of \uni{000d} in the input or output sequence must be part of a message
-terminator.
-
-\minor The scalar value \uni{0020 space} divides messages into \term{tokens},
-that is, a token is a non-empty sequence of scalar values that are not
-\uni{0020}, and every scalar value of a message is either part of a token
-or is \uni{0020}.
-\vskip-\parskip
-\greybox{In some cases, only the beginning of a message will be viewed as a
-collection of tokens and the remainder will be viewed as a continuous sequence
-of scalar values.}
-
+\vskip\parskip
 \beginruby
 format(%q{
 def get_token!('seq : List(Byte)) -> List(Byte) | None
@@ -428,183 +631,5 @@ def get_token!('seq : List(Byte)) -> List(Byte) | None
   return 'tok
 })
 \endruby
-
-\vfil\break
-\minor A \term{position} is a tuple with the following fields:
-
-{\leftskip=3ex
-
-\vskip-0.5\parskip An 8×8 array of elements, each of which is either empty
-or a color−\allowbreak kind pair (where the \term{color} is white or black
-and the \term{kind} is king, queen, rook, knight, bishop, or pawn). This
-array is called the \term{board} and is indexed along one axis by the letters
-“a” through “h” inclusive and along the other axis by the numerals “1” through
-“8”. A color−\allowbreak kind pair is called a \term{piece}.
-
-\vskip-0.5\parskip A color, white or black, called the \term{side to move}.
-
-\vskip-0.5\parskip A collection of values, called the \term{rights}, which may
-be empty or include one or more of the following: the white kingside castling
-right, the white queenside castling right, the black kingside castling right,
-and the black queenside castling right.
-
-\vskip-0.5\parskip A value called the \term{en passant target}, which is either
-none or one of a3, b3, \ellipsis\ot, h3, or a6, b6, \ellipsis\ot, h6.
-
-\vskip-0.5\parskip A nonnegative integer called the \term{depth from zeroing},
-which is 150 or less. \comment{This is the number of moves that have been played
-(none of which are captures or pawn moves) since the last capture or pawn move,
-measured in ply.}
-
-}
-
-\vskip-0.5\parskip The \term{side waiting} in a position is the opposite color
-of the side to move.
-
-\minor For a given position, a king is \term{in check} if it is attacked by one
-or more pieces of the opposite color, where “attacked” is defined analogously to
-article 3.1.2 of the 2023 {\caps fide} Laws of Chess.
-
-\minor A position is \term{legal} if the following conditions are all satisfied:
-
-{\leftskip=3ex
-
-\vskip-0.5\parskip The board contains exactly one white king and one black king.
-
-\vskip-0.5\parskip The board does not contain any pawns at indices
-a1, b1, \ellipsis\ot, h1 and does not contain any pawns at indices
-a8, b8, \ellipsis\ot, h8.
-
-\vskip-0.5\parskip If the rights include the white kingside castling right, the
-white king is at index e1 and there is a white rook at index h1. If the rights
-include the white queenside castling right, the white king is at index e1 and
-there is a white rook at index a1. If the rights include the black kingside
-castling right, the black king is at index e8 and there is a black rook at
-index h8. If the rights include the black queenside castling right, the black
-king is at index e8 and there is a black rook at index a8.
-
-\vskip-0.5\parskip If the en passant target is {\it n}\ot3 for some {\it n},
-then the side to move is black, there is a white pawn at index {\it n}\ot4, and
-at {\it n}\ot2 and {\it n}\ot3 the board is empty. If the en passant target is
-{\it n}\ot6 for some {\it n}, then the side to move is white, there is a black
-pawn at index {\it n}\ot5, and at {\it n}\ot6 and {\it n}\ot7 the board is
-empty.
-
-\vskip-0.5\parskip The king of the color of the side waiting is not in check.
-
-}
-
-\vskip-\parskip
-\greybox{A legal position as defined here need not be reachable from the
-starting position.}
-
-\minor A \term{move} is either a tuple with two fields – a board index
-called the \term{source} and a board index called the \term{destination}
-– or a tuple with three fields: a source, a destination, and a kind called
-the \term{promotion kind} that is either queen, rook, bishop, or knight.
-
-\minor For a given position {\it P}, a move {\it M} is \term{legal} and the
-position {\it Q} \term{immediately follows} when {\it M} is \term{applied} if
-{\it P}, {\it M}, and {\it Q} fulfill requirements analogous to articles 3.1
-through 3.9 inclusive of the 2023 {\caps fide} Laws of Chess, except
-
-{\leftskip=3ex
-
-\vskip-0.5\parskip the requirement for a pawn to advance by two is instead that
-the pawn is white and its index is one of a2, b2, \ellipsis\ot, h2 or that the
-pawn is black and its index is one of a7, b7, \ellipsis\ot, h7, and
-
-\vskip-0.5\parskip the requirement for an en passant capture is instead that
-the en passant target is not none and the capturing pawn attacks the en passant
-target.
-
-}
-
-In particular, when {\it M} is legal, there is a piece of the color of the side
-to move in the board of {\it P} at the source of {\it M} and there is a piece
-of the same color and kind (or a piece of the same color and the promotion kind
-of {\it M}) in the board of {\it Q} at the destination of {\it M}.
-
-The side to move of {\it Q} is the opposite color of the the side to move of
-{\it P}. If {\it M} is a king or rook move, the rights of {\it Q} do not include
-the corresponding castling right or castling rights. If {\it M} advances a pawn
-by two, the en passant target of {\it Q} is the index between the source and
-destination of {\it M}. If {\it M} is a capture or a pawn move, the depth from
-zeroing of {\it Q} is zero; otherwise, the depth from zeroing of {\it Q} is the
-depth from zeroing of {\it P} plus one.
-
-\def\rjust#1#2{\hbox to #1{\hfil #2}}
-\def\alt{\vrule height 7.125pt depth 1.375pt width 0.7pt}
-
-\minor A \term{Forsyth–Edwards Notation ({\caps fen}) sequence} is a sequence
-of six tokens ⟨{\it board, side to move, rights, {\icap ep} target,
-{\icap dfz}, move number}⟩ of the form\par
-%
-\dimen0=5em
-\vskip-0.5\parskip\hskip3ex\rjust{\dimen0}{\it board}
-  \dt=\dt\ \r{(['{\it row}']*8).join('\pt\s/\pt')}\par
-\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it row}
-  \dt=\dt\ \s8 \alt\ [\s1–\s8\s{KQRBNPkqrbnp}]+\par
-\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it side to move}
-  \dt=\dt\ \s w \alt\ \s b\par
-\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it rights}
-  \dt=\dt\ \s- \alt\ \s K?\pt\s Q?\pt\s k?\pt\s q?\par
-  % \lower0.5pt\hbox{\notomono ∩} [\s{KQkq}]+)\par
-\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it {\icap ep} target}
-  \dt=\dt\ \s- \alt\ [\s a–\s h][\s{36}]\par
-\vskip-\parskip\hskip3ex\rjust{\dimen0}{\icap dfz}
-  \dt=\dt\ \s0 \alt\ [\s1–\s9][\s0–\s9]\lower0.25ex\hbox{*}\par
-\vskip-\parskip\hskip3ex\rjust{\dimen0}{\it move number}
-  \dt=\dt\ [\s1–\s9][\s0–\s9]\lower0.25ex\hbox{*}\par
-\vskip-\parskip\hskip3ex
-  \comment{The dash “\s-” is \uni{002d hyphen-minus}.}
-
-\vskip-0.5\parskip with the following additional constraints:
-
-{\leftskip=3ex
-
-\vskip-0.5\parskip In each {\it row}, numerals must not be adjacent; that is,
-there must not be two or more immediately consecutive numerals.
-
-\vskip-0.5\parskip For each {\it row},
-map \s K,\pt\s Q, \ellipsis\ot,\pt\s p to 1,
-map \s1,\pt\s2, \ellipsis\ot,\pt\s8 to 1,\pt2,\pt.\ot.\ot.,\pt8,
-and then define the width as the sum of these numbers.
-For each {\it row}, the width must be 8.
-
-\vskip-0.5\parskip The scalar values \s K and \s k must each occur exactly
-once in the {\it board}.
-
-\vskip-0.5\parskip The scalar value \s P must not occur in the first {\it row}
-and must not occur in the last {\it row}, and likewise for the scalar value
-\s p.
-
-\vskip-0.5\parskip The {\icap dfz} token interpreted as a decimal integer must
-be 150 or less.
-
-\vskip-0.5\parskip The {\it move number} token interpreted as a decimal integer
-must be less than 10\pt000.\par}
-
-\minor An {\caps fen} sequence \term{describes} a position if it maps to the
-position in a manner analogous to that described in article 16.1.3 of the
-Portable Game Notation Specification.
-
-\minor The \term{starting position} is the position described by the {\caps fen}
-sequence\hfil\penalty-10000
-\hbox{\s{rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1}}.
-
-\minor A \term{move token} is a token of the form
-[\s a–\s h][\s1–\s8][\s a–\s h][\s1–\s8] or
-{\it n}\ot\s7\ot{\it n}\ot\s8[\s{qrbn}] or
-{\it n}\ot\s2\ot{\it n}\ot\s1[\s{qrbn}], where {\it n} is one of \s a, \s b,
-\ellipsis\ot, \s h.
-
-% \major{\bf Client Messages}
-
-% \major{\bf Engine Messages}
-
-% \major{\bf States and Transitions}
-
-% \major{\bf Notation}
 
 \bye
