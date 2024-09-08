@@ -372,10 +372,10 @@ engine streams is either part of a message or part of a message terminator.
 The messages within the client stream are \term{client messages} and the
 messages within the engine stream are \term{engine messages}.
 \vskip-\parskip
-\greybox{This precludes the proper use of some encodings, such as
-{\caps utf-16} (since in {\caps utf-16}, the byte \hex{0a} appears in the
-encodings of various scalar values, whereas in {\caps utf-8}, the byte
-\hex{0a} only appears in the encoding for \uni{000a line feed}).}
+\greybox{This precludes the proper use of some encodings, such as {\caps utf-16}
+or {\caps utf-32} (since in {\caps utf-16} and {\caps utf-32}, the byte \hex{0a}
+appears in the encodings of various scalar values, whereas in {\caps utf-8}, the
+byte \hex{0a} only appears in the encoding for \uni{000a line feed}).}
 
 \minor The byte \hex{20} divides messages into \term{tokens}, that is, a token
 is a non-empty sequence of bytes that are not \hex{20}, and every byte of a
@@ -384,6 +384,9 @@ message is either part of a token or is \hex{20}.
 \greybox{In some cases, only the beginning of a message will be viewed as a
 collection of tokens and the remainder will be viewed as a contiguous sequence
 of bytes.}
+
+% TODO when the remainder of a message is viewed as bytes, are both leading
+%   and trailing spaces stripped?
 
 \minor A \term{position} is a tuple with the following fields:
 
@@ -407,10 +410,9 @@ and the black queenside castling right.
 \vskip-0.5\parskip A value called the \term{en passant target}, which is either
 {\caps none} or one of a3, b3, \ellipsis\ot, h3, or a6, b6, \ellipsis\ot, h6.
 
-\vskip-0.5\parskip A nonnegative integer called the \term{depth from zeroing},
-which is 100 or less. \comment{This is the number of moves that have been played
-(none of which are captures or pawn moves) since the last capture or pawn move,
-measured in ply.}
+\vskip-0.5\parskip A nonnegative integer called the \term{depth from zeroing}.
+\comment{This is the number of moves that have been played (none of which are
+captures or pawn moves) since the last capture or pawn move, measured in ply.}
 
 }
 
@@ -449,6 +451,8 @@ there is a black pawn at index {\it n}\ot5, and at {\it n}\ot6 and {\it n}\ot7
 the board is {\caps none}.
 
 \vskip-0.5\parskip The king of the color of the side waiting is not in check.
+
+\vskip-0.5\parskip The depth from zeroing is 100 or less.
 
 \vskip-0.5\parskip There is at least one valid move that can be applied (as
 described in \the\majorcount·{\advance\minorcount by 2 \the\minorcount} below).
