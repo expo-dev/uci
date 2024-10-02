@@ -294,7 +294,7 @@
 This specification governs the interaction between two processes named the
 {\it client} and the {\it engine}. \comment{Graphical interfaces, terminal
 emulators, and scripts and utilities are examples of clients.} The text of
-sections 1–5 is normative (except as described in {\it Conventions} below).
+sections 1–4 is normative (except as described in {\it Conventions} below).
 
 {\bf Getting Started}
 
@@ -357,10 +357,10 @@ for other interfaces, such as for file system paths that are passed as arguments
 to the operating system. For example, the client and engine may be communicating
 over a network connexion and the client may be running on Linux (where paths
 are arbitrary byte sequences that do not contain \hex{00} or \hex{2f}) but the
-engine may be running on Windows (for which {\caps ntfs} is a common filesystem,
+engine may be running on Windows (where {\caps ntfs} is a common filesystem,
 which stores file names in {\caps utf-16}, but where older libraries or
-{\caps api}s may expect paths encoded in the local code page), and so the path
-of a tablebase file may require transcoding, implicitly or explicitly.}
+{\caps api}s may expect paths encoded in the local code page), and so the
+path of a tablebase file may require transcoding, implicitly or explicitly.}
 
 \minor A \term{message terminator} is the pair ⟨\ot\hex{0d}, \hex{0a}⟩ or
 \hex{0a} alone when it is not preceded by \hex{0d}.
@@ -372,10 +372,13 @@ engine streams is either part of a message or part of a message terminator.
 The messages within the client stream are \term{client messages} and the
 messages within the engine stream are \term{engine messages}.
 \vskip-\parskip
-\greybox{This precludes the proper use of some encodings, such as {\caps utf-16}
-or {\caps utf-32} (since in {\caps utf-16} and {\caps utf-32}, the byte \hex{0a}
-appears in the encodings of various scalar values, whereas in {\caps utf-8}, the
-byte \hex{0a} only appears in the encoding for \uni{000a line feed}).}
+\greybox{This precludes the proper use of some encodings for client−engine
+communication, such as \hbox{\caps utf-16} or \hbox{\caps utf-32} (since in
+\hbox{\caps utf-16} and \hbox{\caps utf-32}, the byte \hex{0a} appears in the
+encodings of various scalar values, whereas in \hbox{\caps utf-8}, the byte
+\hex{0a} only appears in the encoding for \uni{000a line feed}).}
+\vskip-\parskip
+\greybox{Note that \hex{00} is not disallowed.}
 
 \minor The byte \hex{20} divides messages into \term{tokens}, that is, a token
 is a non-empty sequence of bytes that are not \hex{20}, and every byte of a
@@ -412,7 +415,7 @@ and the black queenside castling right.
 
 \vskip-0.5\parskip A nonnegative integer called the \term{depth from zeroing}.
 \comment{This is the number of moves that have been played (none of which are
-captures or pawn moves) since the last capture or pawn move, measured in ply.}
+captures or pawn moves) since the last capture or pawn move, measured in~ply.}
 
 }
 
@@ -581,11 +584,291 @@ record\hfil\penalty-10000
 
 \major{\bf Client Messages}
 
+\minor {\caps todo}\hem a client message has one of seven types indicated
+by the first token of the message (\s{debug}, \s{setoption}, \s{ucinewgame},
+\s{position}, \s{isready}, \s{go}, and \s{stop})
+
 \major{\bf Engine Messages}
+
+\minor {\caps todo}\hem an engine message has one of six types indicated
+by the first token of the message (\s{id}, \s{option}, \s{uciok}, \s{info},
+\s{readyok}, \s{bestmove})
+
+\vfil\break
 
 \major{\bf States and Transitions}
 
-\major{\bf Notation}
+\minor Once the engine dequeues a \s{uci} message from the client stream,
+at every point in time the engine is in one of six \term{states}. The engine
+begins in the \term{initial} state. When the engine dequeues a client message
+or enqueues an engine message, the state may change; this is a
+\term{transition}.
+\vskip-\parskip
+\greybox{There is a particular invariant that transition rules should satisfy
+due to the nature of standard input and standard output.
+
+Firstly, the moment a message is read necessarily occurs some duration after
+the moment that the message is written (that is, the sender does not directly
+manipulate the memory of the recipient). Secondly, a process cannot both read
+from a file descriptor and write to a file descriptor as an atomic transaction
+(that is, “time of check to time of use” race conditions cannot be prevented).
+
+In particular, it is impossible for a process to guarantee that a write
+to file descriptor {\caps f} is not preceded by a write to file descriptor
+{\caps g} by another process. Even if the process attempts to read {\caps g},
+finds it empty, and immediately writes to {\caps f}, it is possible for an
+intervening write to {\caps g} to occur before the write to {\caps f} occurs.
+
+As a result, if a transition from state {\caps a} to state {\caps b} occurs
+when the engine sends a message, it is impossible to guarantee that a message
+sent by the client in state {\caps a} can actually be read by the engine in
+state {\caps a} (and not in state {\caps b}). Therefore, any message that the
+client is allowed to send in state {\caps a} should be allowed in
+state~{\caps b}. The same principle holds vice versa, and so we can state the
+invariant more generally as follows:
+
+\it For distinct processes 1 and 2, for all pairs of states {\icap a} and
+{\icap b}, if a transition from {\icap a} to {\icap b} can be caused by process
+1 sending a message, every messages that process 2 is allowed to send in state
+{\icap a} must also be allowed in state~{\icap b}.}
+
+\minor In some states, the engine may dequeue a message. If the engine dequeues
+a message, the message must be well-formed and have an allowed message type
+given the state of the engine.
+\vskip-0.5\baselineskip
+\greybox{This is not meant to imply that standard input is ever required to be
+empty, but meant to indicate that in some states the engine is not allowed to
+read standard input.}
+
+\minor In all states, the engine may enqueue a message. If the engine enqueues a
+message, the message must be well-formed and have an allowed message type given
+the state of the engine.
+
+\minor The allowed message types that may be dequeued and enqueued in each state
+are enumerated in the following table. If the {\caps next} column is not empty
+for a particular row, the action listed in the row (dequeuing or enqueuing a
+message of a particular type) causes a transition to the listed state.
+
+\dimen0=4em
+\dimen1=6em
+\dimen2=6em
+\dimen3=4em
+
+\dimen4=0em
+\advance\dimen4 by \dimen1
+\advance\dimen4 by \dimen2
+
+\def\br{\hrule height 0.8pt depth 0pt}
+\def\hr{\hrule height 0.4pt depth 0pt}
+\def\vr{\vrule width 0.4pt}
+
+\vskip\baselineskip
+\hbox to \hsize{%
+  \hfil
+  \vbox{%
+    \br
+    \hbox{\strut
+      \hbox to \dimen0{\hfil\caps state\hfil}%
+      \vr\hbox to \dimen4{\hfil\caps allowed\hfil}%
+      \vr\hbox to \dimen3{\hfil\caps next\hfil}%
+    }%
+    \br
+    \hbox{%
+      \vtop{%
+        \hbox{\strut}%
+        \kern 0.4pt\hbox to \dimen0{\strut\hfil initial\hfil}%
+      }%
+      \vr
+      \vtop{
+        \hbox{\strut}%
+        \kern 0.4pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
+      }%
+      \vtop{%
+           \hbox to \dimen2{\strut\hem\s{id}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{option}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{uciok}\hfil}%
+      }%
+      \vr
+      \vtop{%
+        \hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \hr\hbox to \dimen3{\strut\hfil idle\hfil}%
+      }%
+    }%
+    \br
+    \hbox{%
+      \vtop{%
+        \hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt
+        \kern 0.5\strutht\kern 0.5\strutdp
+        \kern 0.2pt\hbox to \dimen0{\strut\hfil idle\hfil}%
+      }%
+      \vr
+      \vtop{
+        \hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox to \dimen1{\strut\hfil\caps dequeue\hfil}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \hr\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
+      }%
+      \vtop{%
+           \hbox to \dimen2{\strut\hem\s{debug}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{setoption}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{ucinewgame}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{position}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{isready}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{go}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{stop}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{info}\hfil}%
+      }%
+      \vr
+      \vtop{%
+        \hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \hr\hbox to \dimen3{\strut\hfil sync\hfil}%
+        \hr\hbox to \dimen3{\strut\hfil active\hfil}%
+        \hr\hbox{\strut}%
+      }%
+    }%
+    \br
+    \hbox{%
+      \vtop{%
+        \hbox{\strut}%
+        \kern -0.5\strutht\kern -0.5\strutdp
+        \kern 0.2pt\hbox to \dimen0{\strut\hfil sync\hfil}%
+      }%
+      \vr
+      \vtop{
+        \hbox{\strut}%
+        \kern -0.5\strutht\kern -0.5\strutdp
+        \kern 0.2pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
+      }%
+      \vtop{%
+        \hbox to \dimen2{\strut\hem\s{info}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{readyok}\hfil}%
+      }%
+      \vr
+      \vtop{%
+        \hbox{\strut}%
+        \hr\hbox to \dimen3{\strut\hfil idle\hfil}%
+      }%
+    }%
+    \br
+    \hbox{%
+      \vtop{%
+        \hbox{\strut}%
+        \kern 0.4pt\hbox{\strut}%
+        \kern 0.4pt\hbox to \dimen0{\strut\hfil active\hfil}%
+      }%
+      \vr
+      \vtop{
+        \hbox{\strut}%
+        \kern 0.4pt\hbox to \dimen1{\strut\hfil\caps dequeue\hfil}%
+        \kern 0.4pt\hbox{\strut}%
+        \hr
+        \kern 0.5\strutht\kern 0.5\strutdp
+        \kern 0.2pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
+      }%
+      \vtop{%
+           \hbox to \dimen2{\strut\hem\s{debug}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{isready}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{stop}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{info}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{bestmove}\hfil}%
+      }%
+      \vr
+      \vtop{%
+        \hbox{\strut}%
+        \hr\hbox to \dimen3{\strut\hfil ping\hfil}%
+        \hr\hbox to \dimen3{\strut\hfil halt\hfil}%
+        \hr\hbox{\strut}%
+        \hr\hbox to \dimen3{\strut\hfil idle\hfil}%
+      }%
+    }%
+    \br
+    \hbox{%
+      \vtop{%
+        \hbox{\strut}%
+        \kern -0.5\strutht\kern -0.5\strutdp
+        \kern 0.2pt\hbox to \dimen0{\strut\hfil ping\hfil}%
+      }%
+      \vr
+      \vtop{
+        \hbox{\strut}%
+        \kern -0.5\strutht\kern -0.5\strutdp
+        \kern 0.2pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
+      }%
+      \vtop{%
+        \hbox to \dimen2{\strut\hem\s{info}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{readyok}\hfil}%
+      }%
+      \vr
+      \vtop{%
+        \hbox{\strut}%
+        \hr\hbox to \dimen3{\strut\hfil active\hfil}%
+      }%
+    }%
+    \br
+    \hbox{%
+      \vtop{%
+        \hbox{\strut}%
+        \kern -0.5\strutht\kern -0.5\strutdp
+        \kern 0.2pt\hbox to \dimen0{\strut\hfil halt\hfil}%
+      }%
+      \vr
+      \vtop{
+        \hbox{\strut}%
+        \kern -0.5\strutht\kern -0.5\strutdp
+        \kern 0.2pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
+      }%
+      \vtop{%
+        \hbox to \dimen2{\strut\hem\s{info}\hfil}%
+        \hr\hbox to \dimen2{\strut\hem\s{bestmove}\hfil}%
+      }%
+      \vr
+      \vtop{%
+        \hbox{\strut}%
+        \hr\hbox to \dimen3{\strut\hfil idle\hfil}%
+      }%
+    }%
+    \br
+  }%
+  \hfil
+}
+
+{\caps todo}\hem pondering
+
+\minor {\caps todo}\hem clients are required to send \s{ucinewgame} at least
+once before the very first time they send \s{go} (but engines are strongly
+recommended to behave identically whether or not \s{ucinewgame} is ever sent
+or not)
+
+\minor {\caps todo}\hem clients are required to send \s{position} at least
+once before the very first time they send \s{go} (but engines are strongly
+recommended to behave as if \s{position startpos} were sent if \s{position}
+is not sent before \s{go} is sent)
+
+{\caps todo}\hem note that the client is not required to send \s{isready}
+before \s{go}
+
+{\caps todo}\hem note that \s{ucinewgame} does not reset the current board
+position nor does it reset the move history (only \s{position} changes the
+current board state and move history)
+
+{\caps todo}\hem note that the client may send \s{ucinewgame} after \s{position}
+before \s{go} without any additional intervening \s{position}
+
+{\caps todo}\hem note that engines and clients are not required to ignore
+or otherwise handle unknown or unexpected tokens (these are simply violations)
+
+% \major{\bf Notation}
 
 \vfil\break
 
