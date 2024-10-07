@@ -585,14 +585,15 @@ record\hfil\penalty-10000
 
 \major{\bf Client Messages}
 
-A client message has one of eight types indicated by the first token of the
+A client message has one of nine types indicated by the first token of the
 message (\s{uci}, \s{debug}, \s{setoption}, \s{ucinewgame}, \s{position},
-\s{isready}, \s{go}, and \s{stop}).
+\s{isready}, \s{go}, \s{stop}, and \s{quit}).
 
 \major{\bf Engine Messages}
 
-An engine message has one of six types indicated by the first token of the
-message (\s{id}, \s{option}, \s{uciok}, \s{info}, \s{readyok}, \s{bestmove}).
+An engine message has one of six types indicated by the first token of
+the message (\s{id}, \s{option}, \s{uciok}, \s{info}, \s{readyok}, and
+\s{bestmove}).
 
 \vfil\break
 
@@ -604,9 +605,6 @@ the message, behaving as if the message were not transmitted.
 
 The remainder of section \the\majorcount\ is written without mention of void
 messages; consideration for void messages is tacit.
-
-% Empty messages may always be sent and must be ignored by the client
-% and engine. Empty messages never cause a transition.
 
 \minor Once the engine dequeues a \s{uci} message from the client stream,
 at every point in time the engine is in one of six \term{states}. The engine
@@ -881,11 +879,12 @@ before \s{go} without sending any additional intervening \s{position} message.}
 does it reset the move history. (Only \s{position} changes the current board
 state and move history.)}
 
-% This specification stops governing the interaction between the client
-% and the engine when the client sends a well-formed quit message in
-% the idle state. Engines are recommended to shut down and terminate
-% themselves. Clients are recommended to provide a grace period before
-% killing the engine.
+\minor The specification ceases to govern the interaction between the client
+and the engine when the client enqueues a well-formed \s{quit} message.
+\vskip-\parskip
+\bluebox{Engines are recommended to stop searching immediately and exit.
+Clients are recommended, if engines are their subprocesses, to provide a
+grace period before terminating engines.}
 
 % \major{\bf Notation}
 
