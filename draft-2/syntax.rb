@@ -7,6 +7,7 @@ HILITE = {
   'def'       => :kwd,
   'error'     => :kwd,
   'let'       => :kwd,
+  'mut'       => :kwd,
   'return'    => :kwd,
   'type'      => :kwd,
   'violation' => :kwd,
@@ -38,6 +39,7 @@ def format(text)
   text.gsub!(/<-( )?/) { '\gets' + (($1.nil?) ? '' : '\ ') }
   text.gsub!(/->( )?/) { '\to'   + (($1.nil?) ? '' : '\ ') }
   text.gsub!(/=>( )?/) { '\then' + (($1.nil?) ? '' : '\ ') }
+  text.gsub!(/ +\| +/, '\hskip0.5\spaceskip|\hskip0.5\spaceskip ')
   # text.gsub!('...', '\dt ...\dt ')
   # text.gsub!(?_, '\pt ')
   text.gsub!(?_, '\hskip0.5\spaceskip ')

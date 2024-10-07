@@ -366,8 +366,8 @@ path of a tablebase file may require transcoding, implicitly or explicitly.}
 \hex{0a} alone when it is not preceded by \hex{0d}.
 
 \minor Message terminators divide the client and engine streams into
-\term{messages}; that is, a message is a (possibly empty) subsequence of bytes
-that does not contain a message terminator and every byte of the client and
+\term{messages}; that is, a message is a (possibly empty) sequence of bytes
+that does not contain a message terminator, and every byte of the client and
 engine streams is either part of a message or part of a message terminator.
 The messages within the client stream are \term{client messages} and the
 messages within the engine stream are \term{engine messages}.
@@ -387,6 +387,9 @@ message is either part of a token or is \hex{20}.
 \greybox{In some cases, only the beginning of a message will be viewed as a
 collection of tokens and the remainder will be viewed as a contiguous sequence
 of bytes.}
+
+\minor A message that does not contain any tokens (that is, an empty sequence
+or a sequence of one or more repetitions of \hex{20}) is \term{void}.
 
 % TODO when the remainder of a message is viewed as bytes, are both leading
 %   and trailing spaces stripped?
@@ -425,8 +428,6 @@ of the side to move.
 \minor For a given position, a king is \term{in check} if it is attacked by one
 or more pieces of the opposite color, where “attacked” is defined analogously to
 article 3.1.2 of the 2023 {\caps fide} Laws of Chess.
-
-\vfil\break
 
 \minor A position is \term{valid} if the following conditions are all satisfied:
 
@@ -584,19 +585,28 @@ record\hfil\penalty-10000
 
 \major{\bf Client Messages}
 
-\minor {\caps todo}\hem a client message has one of seven types indicated
-by the first token of the message (\s{debug}, \s{setoption}, \s{ucinewgame},
-\s{position}, \s{isready}, \s{go}, and \s{stop})
+A client message has one of eight types indicated by the first token of the
+message (\s{uci}, \s{debug}, \s{setoption}, \s{ucinewgame}, \s{position},
+\s{isready}, \s{go}, and \s{stop}).
 
 \major{\bf Engine Messages}
 
-\minor {\caps todo}\hem an engine message has one of six types indicated
-by the first token of the message (\s{id}, \s{option}, \s{uciok}, \s{info},
-\s{readyok}, \s{bestmove})
+An engine message has one of six types indicated by the first token of the
+message (\s{id}, \s{option}, \s{uciok}, \s{info}, \s{readyok}, \s{bestmove}).
 
 \vfil\break
 
 \major{\bf States and Transitions}
+
+\minor The client and the engine both may always enqueue or dequeue a void
+message. When the client or engine dequeues a void message, it must ignore
+the message, behaving as if the message were not transmitted.
+
+The remainder of section \the\majorcount\ is written without mention of void
+messages; consideration for void messages is tacit.
+
+% Empty messages may always be sent and must be ignored by the client
+% and engine. Empty messages never cause a transition.
 
 \minor Once the engine dequeues a \s{uci} message from the client stream,
 at every point in time the engine is in one of six \term{states}. The engine
@@ -635,10 +645,11 @@ invariant more generally as follows:
 \minor In some states, the engine may dequeue a message. If the engine dequeues
 a message, the message must be well-formed and have an allowed message type
 given the state of the engine.
-\vskip-0.5\baselineskip
+\vskip-\parskip
 \greybox{This is not meant to imply that standard input is ever required to be
 empty, but meant to indicate that in some states the engine is not allowed to
-read standard input.}
+read standard input (or at least must behave as if it has not read standard
+input).}
 
 \minor In all states, the engine may enqueue a message. If the engine enqueues a
 message, the message must be well-formed and have an allowed message type given
@@ -646,8 +657,8 @@ the state of the engine.
 
 \minor The allowed message types that may be dequeued and enqueued in each state
 are enumerated in the following table. If the {\caps next} column is not empty
-for a particular row, the action listed in the row (dequeuing or enqueuing a
-message of a particular type) causes a transition to the listed state.
+for a row, the action listed in the row (dequeuing or enqueuing a message of
+a particular type) causes a transition to the listed state.
 
 \dimen0=4em
 \dimen1=6em
@@ -668,7 +679,7 @@ message of a particular type) causes a transition to the listed state.
   \vbox{%
     \br
     \hbox{\strut
-      \hbox to \dimen0{\hfil\caps state\hfil}%
+         \hbox to \dimen0{\hfil\caps state\hfil}%
       \vr\hbox to \dimen4{\hfil\caps allowed\hfil}%
       \vr\hbox to \dimen3{\hfil\caps next\hfil}%
     }%
@@ -751,7 +762,7 @@ message of a particular type) causes a transition to the listed state.
         \kern 0.2pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
       }%
       \vtop{%
-        \hbox to \dimen2{\strut\hem\s{info}\hfil}%
+           \hbox to \dimen2{\strut\hem\s{info}\hfil}%
         \hr\hbox to \dimen2{\strut\hem\s{readyok}\hfil}%
       }%
       \vr
@@ -806,7 +817,7 @@ message of a particular type) causes a transition to the listed state.
         \kern 0.2pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
       }%
       \vtop{%
-        \hbox to \dimen2{\strut\hem\s{info}\hfil}%
+           \hbox to \dimen2{\strut\hem\s{info}\hfil}%
         \hr\hbox to \dimen2{\strut\hem\s{readyok}\hfil}%
       }%
       \vr
@@ -829,7 +840,7 @@ message of a particular type) causes a transition to the listed state.
         \kern 0.2pt\hbox to \dimen1{\strut\hfil\caps enqueue\hfil}%
       }%
       \vtop{%
-        \hbox to \dimen2{\strut\hem\s{info}\hfil}%
+           \hbox to \dimen2{\strut\hem\s{info}\hfil}%
         \hr\hbox to \dimen2{\strut\hem\s{bestmove}\hfil}%
       }%
       \vr
@@ -842,37 +853,47 @@ message of a particular type) causes a transition to the listed state.
   }%
   \hfil
 }
+\vglue-3\baselineskip\vfil\break
 
-{\caps todo}\hem pondering
+\greybox{Engines and clients are not required to ignore (or otherwise handle)
+unknown or unexpected tokens (these are simply violations).}
 
-\minor {\caps todo}\hem clients are required to send \s{ucinewgame} at least
-once before the very first time they send \s{go} (but engines are strongly
-recommended to behave identically whether or not \s{ucinewgame} is ever sent
-or not)
+\minor The client must enqueue a \s{ucinewgame} message at least once before
+before it enqueues a \s{go} message for the first time.
+\vskip-\parskip
+\bluebox{Engines are strongly recommended to behave identically whether or not
+a \s{ucinewgame} message is ever sent.}
 
-\minor {\caps todo}\hem clients are required to send \s{position} at least
-once before the very first time they send \s{go} (but engines are strongly
-recommended to behave as if \s{position startpos} were sent if \s{position}
-is not sent before \s{go} is sent)
+\minor The client must enqueue a \s{position} message at least once before it
+enqueues a \s{go} message for the first time.
+\vskip-\parskip
+\bluebox{Engines are strongly recommended, if a \s{position} message is not
+sent before the first \s{go} message, to behave as if \s{position startpos}
+were sent.}
+\vskip-\parskip
+\greybox{Note that the client is not required to send \s{isready} before
+\s{go}.}
+\vskip-\parskip
+\greybox{Note that the client may send \s{ucinewgame} after \s{position}
+before \s{go} without sending any additional intervening \s{position} message.}
+\vskip-\parskip
+\greybox{Note that \s{ucinewgame} does not reset the current board state nor
+does it reset the move history. (Only \s{position} changes the current board
+state and move history.)}
 
-{\caps todo}\hem note that the client is not required to send \s{isready}
-before \s{go}
-
-{\caps todo}\hem note that \s{ucinewgame} does not reset the current board
-position nor does it reset the move history (only \s{position} changes the
-current board state and move history)
-
-{\caps todo}\hem note that the client may send \s{ucinewgame} after \s{position}
-before \s{go} without any additional intervening \s{position}
-
-{\caps todo}\hem note that engines and clients are not required to ignore
-or otherwise handle unknown or unexpected tokens (these are simply violations)
+% This specification stops governing the interaction between the client
+% and the engine when the client sends a well-formed quit message in
+% the idle state. Engines are recommended to shut down and terminate
+% themselves. Clients are recommended to provide a grace period before
+% killing the engine.
 
 % \major{\bf Notation}
 
 \vfil\break
 
 \major{\bf Examples}
+
+\advance\hsize by 10mm
 
 \vskip\parskip
 \beginruby
@@ -882,43 +903,39 @@ format("let @read_byte! : File_Descriptor -> Byte | EOF")
 \vskip\parskip
 \beginruby
 format(%q{
-def trimCR('seq : List(Byte)) : List(Byte)
-  if empty?('seq) or last('seq) ≠ `0d then return 'seq
-  return withoutLast('seq)
+def withoutCR('msg : List(Byte)) : List(Byte)
+  if empty?('msg) or last('msg) ≠ `0d then return 'msg
+  return withoutLast('msg)
 })
 \endruby
 
 \vskip\parskip
 \beginruby
 format(%q{
-def read_message!('fd : File_Descriptor) : List(Byte) | EOF
-  'seq <- empty
+def read_message!(mut 'fd : File_Descriptor) : List(Byte) | EOF
+  'msg <- empty
   repeat
     match read_byte!('fd)
-      eof => return (\pt if empty?('seq) then eof else 'seq\pt)
-      `0a => return trimCR('seq)
-      'val => append!('seq, 'val\pt)
+      eof => return (\pt if empty?('msg) then eof else 'msg\pt)
+      `0a => return withoutCR('msg)
+      'val => append!('msg, 'val\pt)
 })
 \endruby
 
 \vskip\parskip
 \beginruby
 format(%q{
-def get_token!('seq : List(Byte)) -> List(Byte) | None
+def get_token!(mut 'msg : List(Byte)) : List(Byte) | None
   repeat
-    if empty?('seq) then return none
-    if first('seq) ≠ `20 then break
-    removeFirst!('seq)
+    if empty?('msg) then return none
+    if first('msg) ≠ `20 then break
+    removeFirst!('msg)
   'tok <- empty
   repeat
-    append!('tok, first('seq))
-    removeFirst!('seq)
-    if empty?('seq) then return 'tok
-    if first('seq) = `20 then break
-  repeat
-    removeFirst!('seq)
-    if empty?('seq) then return 'tok
-    if first('seq) ≠ `20 then break
+    append!('tok, first('msg))
+    removeFirst!('msg)
+    if empty?('msg) then return 'tok
+    if first('msg) = `20 then break
   return 'tok
 })
 \endruby
