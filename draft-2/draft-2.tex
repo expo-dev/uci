@@ -284,10 +284,11 @@
 \def\var  #1{{\ifw #1}}%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
+\vglue1\baselineskip
 \centerline{\lcap8 UNIVERSAL CHESS INTERFACE}
 \centerline{\lcap4 september 2024 • draft}
 
-\vskip3\baselineskip
+\vskip4\baselineskip
 
 {\bf Introduction}
 
@@ -303,10 +304,14 @@ to add basic {\icap uci} support to their engine.}
 
 {\bf Conventions}
 
-An {\fw\color{\r{ltgrey_fg}}{x}} preceding a number indicates that it is
-written in hexadecimal; for example, \hex{10} = 16. Sequences of bytes encoded
-in {\caps ascii} are set in teal; for example, \s{uci} = ⟨\ot\hex{75}, \hex{63},
-\hex{69}⟩\pt.
+Sequences are written with angle brackets; for example, ⟨\ot0, 1, 2,
+\ellipsis\pt⟩. An~{\fw\color{\r{ltgrey_fg}}{x}} preceding a number
+indicates that it is written in hexadecimal; for example, \hex{10} = 16.
+Sequences of bytes encoded in {\caps ascii} are set in teal; for example,
+\s{uci} = ⟨\ot\hex{75}, \hex{63}, \hex{69}⟩\pt. Sequences of tokens may be
+written without commas when they contain token literals; for example,
+⟨\ot\s{ab}~\s{c}~{\it d}~\s{e}\ot⟩ rather than
+⟨\ot\s{ab},~\s{c},~{\it d},~\s{e}\ot⟩.
 
 Special terms defined by the specification are set in \term{purple} when they
 are first introduced and inline comments are set \comment{after a reference
@@ -388,11 +393,13 @@ message is either part of a token or is \hex{20}.
 collection of tokens and the remainder will be viewed as a contiguous sequence
 of bytes.}
 
-\minor A message that does not contain any tokens (that is, an empty sequence
-or a sequence of one or more repetitions of \hex{20}) is \term{void}.
+\minor For a given sequence of tokens that begin a message (the \term{prefix}),
+the \term{suffix} is the contiguous sequence of bytes starting with the first
+byte that is not \hex{20} after the prefix and ending with the last byte of the
+message.
 
-% TODO when the remainder of a message is viewed as bytes, are both leading
-%   and trailing spaces stripped?
+\minor A sequence of bytes that does not contain any tokens (that is, an empty
+sequence or a sequence of one or more repetitions of \hex{20}) is \term{void}.
 
 \minor A \term{position} is a tuple with the following fields:
 
@@ -552,7 +559,7 @@ there must not be two or more immediately consecutive numerals.
 
 \vskip-0.5\parskip For each {\it row},
 map \s K,\pt\s Q, \ellipsis\ot,\pt\s p to 1,
-map \s1,\pt\s2, \ellipsis\ot,\pt\s8 to 1,\pt2,\pt.\ot.\ot.,\pt8,
+map \s1,\pt\s2, \ellipsis\ot,\pt\s8 to 1,\pt2,\pt\ellipsis,\pt8,
 and then define the width as the sum of these numbers.
 For each {\it row}, the width must be 8.
 
@@ -585,9 +592,56 @@ record\hfil\penalty-10000
 
 \major{\bf Client Messages}
 
-A client message has one of nine types indicated by the first token of the
-message (\s{uci}, \s{debug}, \s{setoption}, \s{ucinewgame}, \s{position},
+\minor A client message has one of nine types indicated by the first token of
+the message (\s{uci}, \s{debug}, \s{setoption}, \s{ucinewgame}, \s{position},
 \s{isready}, \s{go}, \s{stop}, and \s{quit}).
+
+\minor A \s{uci}, \s{ucinewgame}, \s{isready}, \s{stop}, or \s{quit} message
+is well-formed if it contains a single token.
+
+\minor A \s{debug} message is well-formed if it contains two tokens,
+either ⟨\s{debug on}⟩ or ⟨\s{debug off}⟩.
+\vskip-\parskip
+\bluebox{If engines have debugging information to expose via the client
+(that is, through standard output rather than standard error), they should
+feely send \s{info string} messages with this information after receiving
+\s{debug on} and suppress these messages after receiving \s{debug off}.}
+
+\minor A \s{setoption} message is well-formed if it has a prefix
+of the form ⟨\s{setoption name} \ellipsis\ \s{value}⟩, where the ellipsis is
+one or more tokens (none of which are \s{value}) matching an option name listed
+in an \s{option} message enqueued by the engine, and a suffix satisfying the
+condition(s) for the corresponding option type:
+
+{\leftskip=3ex
+
+\vskip-0.5\parskip If \s{check}, the suffix contains a single token, either
+\s{true} or \s{false}.
+
+\vskip-0.5\parskip If \s{spin}, the suffix contains a single token which is a
+decimal integer, either \s0 or of the form
+\s–?\pt[\s1–\s9][\s0–\s9]\lower0.25ex\hbox{*}, not less than the minimum value
+nor greater than the maximum value specified by the engine.
+
+\vskip-0.5\parskip If \s{combo}, the suffix contains one or more tokens and
+the sequence of tokens in the suffix is one of the sequences specified by the
+engine.
+
+\vskip-0.5\parskip If \s{string}, the suffix is not void. The suffix \s{<empty>}
+indicates an empty value. \comment{The value \s{<empty>} therefore cannot be
+specified.}
+
+}
+
+\vskip-0.5\parskip A \s{setoption} message is also well-formed if it is of the
+form ⟨\s{setoption name} \ellipsis\pt⟩ where the ellipsis is one or more tokens
+(none of which are \s{value}) matching an option name listed in an \s{option}
+message enqueued by the engine for which the corresponding option type is
+\s{button}.
+
+\minor A \s{position} message is well-formed if\ellipsis
+
+\minor A \s{go} message is well-formed if\ellipsis
 
 \major{\bf Engine Messages}
 
