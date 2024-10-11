@@ -21,13 +21,23 @@
 \font\caps=\ldcapfont {\basefamily}{\basesize}{\basefeat}%
 \font\icap=\ldicapfont{\basefamily}{\basesize}{\basefeat}%
 %
-\def\subfamily{Alegreya Sans Medium}%
-\def\subsize{8}%
-\font\subrm=\ldfont {\subfamily}{\subsize}{\basefeat}%
-\font\subit=\ldifont{\subfamily}{\subsize}{\basefeat}%
+\def\supfamily{Alegreya Sans Medium}%
+\def\supsize{7.4}%
+\def\supfeat{:+liga:+clig:+calt:+onum:+pnum}%
+\font\suprm=\ldfont {\supfamily}{\supsize}{\supfeat}%
+\font\supit=\ldifont{\supfamily}{\supsize}{\supfeat}%
 %
-\def\sub#1{\lower 0.25ex\hbox{\subrm #1}}%
-\def\isub#1{\lower 0.25ex\hbox{\subit #1}}%
+\def\sup#1{\raise 0.73ex\hbox{\suprm #1}}%
+\def\isup#1{\raise 0.73ex\hbox{\supit #1}}%
+%
+\def\subfamily{Alegreya Sans Medium}%
+\def\subsize{7.4}%
+\def\subfeat{:+liga:+clig:+calt:+onum:+pnum}%
+\font\subrm=\ldfont {\subfamily}{\subsize}{\subfeat}%
+\font\subit=\ldifont{\subfamily}{\subsize}{\subfeat}%
+%
+\def\sub#1{\lower 0.23ex\hbox{\subrm #1}}%
+\def\isub#1{\lower 0.23ex\hbox{\subit #1}}%
 %
 \def\codefamily{JetBrains Mono}%
 \def\codesize{9.25}%
@@ -615,11 +625,11 @@ either ⟨\ot\s{debug on}\ot⟩ or ⟨\ot\s{debug off}\ot⟩.
 feely send \s{info string} messages with this information after receiving
 \s{debug on} and suppress these messages after receiving \s{debug off}.}
 
-\minor A \s{setoption} message is well-formed if it has a prefix
-of the form ⟨\ot\s{setoption name} {\it tok}+ \s{value}\ot⟩, where {\it tok}+ is
-one or more tokens (none of which are \s{value}) matching an option name listed
-in an \s{option} message enqueued by the engine, and a suffix satisfying the
-condition(s) for the corresponding option type:
+\minor A \s{setoption} message is well-formed if it has a prefix of the form
+⟨\ot\s{setoption name} {\it tok}\ot\sup+ \s{value}\ot⟩, where {\it tok}\ot\sup+
+is one or more tokens (none of which are \s{value}) matching an option name
+listed in an \s{option} message enqueued by the engine, and a suffix satisfying
+the condition(s) for the corresponding option type:
 
 {\leftskip=3ex
 
@@ -642,36 +652,44 @@ specified.}
 }
 
 \vskip-0.5\parskip A \s{setoption} message is also well-formed if it is of the
-form ⟨\ot\s{setoption name} {\it tok}+\pt⟩ where {\it tok}+ is one or more tokens
-(none of which are \s{value}) matching an option name listed in an \s{option}
-message enqueued by the engine for which the corresponding option type is
-\s{button}.
+form ⟨\ot\s{setoption name} {\it tok}\ot\sup+\pt⟩ where {\it tok}\ot\sup+ is one
+or more tokens (none of which are \s{value}) matching an option name listed in
+an \s{option} message enqueued by the engine for which the corresponding option
+type is \s{button}.
 
 \minor A \s{position} message is well-formed if it has the form\par
 \vskip-\parskip\hskip3ex
 ⟨\pt\s{position}
-  (\ot\s{startpos} \alt\ \s{fen} {\it fen}\ot⁶\pt)
-  (\ot\s{moves} {\it mov}+\ot)?\pt\ot⟩\par
-\vskip-\parskip where {\it fen}\ot⁶ is an {\caps fen} record and {\it mov}+ is
-one or more move tokens. If~\s{fen} is specified, the position described by
-{\it fen}\ot⁶ must be valid. If \s{moves} is specified:
+  (\ot\s{startpos} \alt\ \s{fen} {\it fen}\ot\sup6\pt)
+  (\ot\s{moves} {\it mov}\ot\sup+\ot)?\pt\ot⟩\par
+\vskip-\parskip where {\it fen}\ot\sup6 is an {\caps fen} record and
+{\it mov}\ot\sup+ is one or more move tokens. If~\s{fen} is specified, the
+position described by {\it fen}\ot\sup6 must be valid. Let {\it P}\sub{0} be
+the starting position if \s{startpos} is specified and the position described
+by {\it fen}\ot\sup6 if \s{fen} is specified. If \s{moves} is specified:
 
 {\leftskip=3ex
 
-\vskip-0.5\parskip Let {\it P}₀ be the starting position if \s{startpos} is
-specified and the position described by {\it fen}\ot⁶ if \s{fen} is specified.
-Let {\it N} be the number of move tokens specified.
+\vskip-0.5\parskip Let {\it N} be the number of move tokens specified.
 
 \vskip-0.5\parskip For {\it n} from 0 to {\it N}−1 inclusive, the {\it n}-th
-token {\it T}\isub{n} of {\it mov}+ must denote a move {\it M}\isub{n} from
-{\it P}\isub{n}. Then let {\it P}\sub{{\subit n}+1} be the position that
+token {\it T}\isub{n} of {\it mov}\ot\sup+ must denote a move {\it M}\isub{n}
+from {\it P}\isub{n}. Then let {\it P}\sub{{\subit n}+1} be the position that
 immediately follows from {\it P}\isub{n} when {\it M}\isub{n} is applied.
 
 \vskip-0.5\parskip The position {\it P}\isub{N} must be valid.
 
 }
 
-\minor A \s{go} message is well-formed if\ellipsis
+\vskip-0.5\parskip The final position (\ot{\it P}\isub{N} if \s{moves} is
+specified, otherwise {\it P}\sub{0}\ot) is the position \term{described} by
+the \s{position} message.
+
+% TODO state machine: position message “sets” “current position” to P_N
+
+% TODO engine message: bestmove must be valid move from current position
+
+\minor A \s{go} message is well-formed if\pt\ellipsis
 
 \major{\bf Engine Messages}
 
