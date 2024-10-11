@@ -21,6 +21,14 @@
 \font\caps=\ldcapfont {\basefamily}{\basesize}{\basefeat}%
 \font\icap=\ldicapfont{\basefamily}{\basesize}{\basefeat}%
 %
+\def\subfamily{Alegreya Sans Medium}%
+\def\subsize{8}%
+\font\subrm=\ldfont {\subfamily}{\subsize}{\basefeat}%
+\font\subit=\ldifont{\subfamily}{\subsize}{\basefeat}%
+%
+\def\sub#1{\lower 0.25ex\hbox{\subrm #1}}%
+\def\isub#1{\lower 0.25ex\hbox{\subit #1}}%
+%
 \def\codefamily{JetBrains Mono}%
 \def\codesize{9.25}%
 \def\codefeat{:+liga:+clig:+calt:lnum:+tnum}%
@@ -345,11 +353,11 @@ engine's standard input is the \term{client stream}. The sequence of bytes
 that the engine sends to the client via the engine's standard output is the
 \term{engine stream}.
 \vskip-\parskip
-\greybox{There are no requirements for an engine's standard error except that it
-be open. For example, the engine's standard error may be directed to a null
-file, to the client's standard output or standard error, or to a log file. There
-are accordingly no restrictions on the sequence of bytes that the engine writes
-to its standard error.}
+\greybox{There are no requirements for an engine's standard error except that
+it be open. For example, the engine's standard error may be directed to a null
+device, to the client's standard output or standard error, or to a log file.
+There are accordingly no restrictions on the sequence of bytes that the engine
+writes to its standard error.}
 \vskip-\parskip
 \bluebox{No particular encoding is specified: the client and engine streams are
 not required to be encoded sequences of Unicode scalar values (or code points
@@ -486,13 +494,13 @@ above).}
 \vskip-\parskip
 \bluebox{Engines are recommended to accept positions that are checkmate or
 stalemate even though they are not required to handle receiving such positions.
-For such positions, engines should report the null move as the best move (see
-\the\majorcount·{\advance\minorcount by 7 \the\minorcount} below).}
+For such positions, engines should report null as the best move (see
+\the\majorcount·{\advance\minorcount by 8 \the\minorcount} below).}
 
-\minor A \term{move} is either a tuple with two fields – a board index
-called the \term{source} and a board index called the \term{destination}
-– or a tuple with three fields: a~source, a~destination, and a kind called
-the \term{promotion kind} that is either queen, rook, bishop, or knight.
+\minor A \term{move} is a tuple of three values: a board index called the
+\term{source}, a board index called the \term{destination}, and a field
+called the \term{promotion kind} that is either {\caps none} or queen, rook,
+bishop, or knight.
 
 \minor For a given position {\it P}, a move {\it M} is \term{valid} and the
 position {\it Q} \term{immediately follows} when {\it M} is \term{applied} if
@@ -544,9 +552,9 @@ move number}⟩ of the form\par
 \vskip-\parskip\hskip3ex\rjust{\dimen0}{\it {\icap ep} target}
   \dt=\dt\ \s- \alt\ [\s a–\s h][\s{36}]\par
 \vskip-\parskip\hskip3ex\rjust{\dimen0}{\icap dfz}
-  \dt=\dt\ \s0 \alt\ [\s1–\s9][\s0–\s9]\lower0.25ex\hbox{*}\par
+  \dt=\dt\ \s0 \alt\ [\s1–\s9][\s0–\s9]?\ \alt\ \s{100}\par
 \vskip-\parskip\hskip3ex\rjust{\dimen0}{\it move number}
-  \dt=\dt\ [\s1–\s9][\s0–\s9]\lower0.25ex\hbox{*}\par
+  \dt=\dt\ [\s1–\s9][\s0–\s9]\char"7B\ot0,\pt3\ot\char"7D\par
 \vskip-\parskip\hskip3ex
   \comment{The dash “\s-” is \hex{2d}.}
 
@@ -563,17 +571,7 @@ map \s1,\pt\s2, \ellipsis\ot,\pt\s8 to 1,\pt2,\pt\ellipsis,\pt8,
 and then define the width as the sum of these numbers.
 For each {\it row}, the width must be 8.
 
-\vskip-0.5\parskip The bytes \s K and \s k must each occur exactly once in
-{\it board}.
-
-\vskip-0.5\parskip The byte \s P must not occur in the first {\it row} and must
-not occur in the last {\it row}, and likewise for the byte \s p.
-
-\vskip-0.5\parskip The {\icap dfz} token interpreted as a decimal integer must
-be 100 or less.
-
-\vskip-0.5\parskip The {\it move number} token interpreted as a decimal integer
-must be less than 10\pt000.\par}
+}
 
 \minor An {\caps fen} record \term{describes} a position if it maps to the
 position in a manner analogous to that described in article 16.1.3 of the
@@ -583,12 +581,22 @@ Portable Game Notation Specification.
 record\hfil\penalty-10000
 \hbox{\s{rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1}}.
 
-\minor A \term{move token} is a token of the form
-\hbox{[\s a–\s h][\s1–\s8][\s a–\s h][\s1–\s8]} or\hfil\penalty-10000
-\hbox{[\s a–\s h]\s7[\s a–\s h]\s8[\s{qrbn}]} or
-\hbox{[\s a–\s h]\s2[\s a–\s h]\s1[\s{qrbn}]}.
+\minor A \term{move token} is a token of the form\par
+\vskip-\parskip\hskip3ex
+  [\s a–\s h][\s1–\s8][\s a–\s h][\s1–\s8][\s{qrbn}]?\par
+\vskip-\parskip The first and second bytes of a move token interpreted in the
+natural way as a board index is the move token’s \term{source}, the third and
+fourth bytes of a move token interpreted in the natural way as a board index is
+the move token’s \term{destination}, and the fifth byte (if present) interpreted
+in the natural way as a kind is the \term{promotion kind}. If the fifth byte is
+not present, the promotion kind of the move token is {\caps none}.
 
-\minor A \term{null move token} is a token of the form \s{0000}.
+\minor For a given position {\it P}, a move token {\it T} \term{denotes} a
+move {\it M} if {\it M} is valid for {\it P} and the source, destination, and
+promotion kind of {\it T} match the source, destination, and promotion kind of
+{\it M} (respectively).
+
+\minor A \term{null token} is a token of the form \s{0000}.
 
 \major{\bf Client Messages}
 
@@ -597,10 +605,10 @@ the message (\s{uci}, \s{debug}, \s{setoption}, \s{ucinewgame}, \s{position},
 \s{isready}, \s{go}, \s{stop}, and \s{quit}).
 
 \minor A \s{uci}, \s{ucinewgame}, \s{isready}, \s{stop}, or \s{quit} message
-is well-formed if it contains a single token.
+is well-formed if it contains exactly one token.
 
-\minor A \s{debug} message is well-formed if it contains two tokens,
-either ⟨\s{debug on}⟩ or ⟨\s{debug off}⟩.
+\minor A \s{debug} message is well-formed if it contains exactly two tokens,
+either ⟨\ot\s{debug on}\ot⟩ or ⟨\ot\s{debug off}\ot⟩.
 \vskip-\parskip
 \bluebox{If engines have debugging information to expose via the client
 (that is, through standard output rather than standard error), they should
@@ -608,14 +616,14 @@ feely send \s{info string} messages with this information after receiving
 \s{debug on} and suppress these messages after receiving \s{debug off}.}
 
 \minor A \s{setoption} message is well-formed if it has a prefix
-of the form ⟨\s{setoption name} \ellipsis\ \s{value}⟩, where the ellipsis is
+of the form ⟨\ot\s{setoption name} {\it tok}+ \s{value}\ot⟩, where {\it tok}+ is
 one or more tokens (none of which are \s{value}) matching an option name listed
 in an \s{option} message enqueued by the engine, and a suffix satisfying the
 condition(s) for the corresponding option type:
 
 {\leftskip=3ex
 
-\vskip-0.5\parskip If \s{check}, the suffix contains a single token, either
+\vskip-0.5\parskip If \s{check}, the suffix contains exactly one token, either
 \s{true} or \s{false}.
 
 \vskip-0.5\parskip If \s{spin}, the suffix contains a single token which is a
@@ -634,12 +642,32 @@ specified.}
 }
 
 \vskip-0.5\parskip A \s{setoption} message is also well-formed if it is of the
-form ⟨\s{setoption name} \ellipsis\pt⟩ where the ellipsis is one or more tokens
+form ⟨\ot\s{setoption name} {\it tok}+\pt⟩ where {\it tok}+ is one or more tokens
 (none of which are \s{value}) matching an option name listed in an \s{option}
 message enqueued by the engine for which the corresponding option type is
 \s{button}.
 
-\minor A \s{position} message is well-formed if\ellipsis
+\minor A \s{position} message is well-formed if it has the form\par
+\vskip-\parskip\hskip3ex
+⟨\pt\s{position}
+  (\ot\s{startpos} \alt\ \s{fen} {\it fen}\ot⁶\pt)
+  (\ot\s{moves} {\it mov}+\ot)?\pt\ot⟩\par
+\vskip-\parskip where {\it fen}\ot⁶ is an {\caps fen} record and {\it mov}+ is
+one or more move tokens. If~\s{fen} is specified, the position described by
+{\it fen}\ot⁶ must be valid. If \s{moves} is specified:
+
+{\leftskip=3ex
+
+\vskip-0.5\parskip Let {\it P}₀ be the starting position if \s{startpos} is
+specified and the position described by {\it fen}\ot⁶ if \s{fen} is specified.
+Let {\it N} be the number of move tokens specified.
+
+\vskip-0.5\parskip For {\it n} from 0 to {\it N}−1 inclusive, the {\it n}-th
+token {\it T}\isub{n} of {\it mov}+ must denote a move {\it M}\isub{n} from
+{\it P}\isub{n}. Then let {\it P}\sub{{\subit n}+1} be the position that
+immediately follows from {\it P}\isub{n} when {\it M}\isub{n} is applied.
+
+}
 
 \minor A \s{go} message is well-formed if\ellipsis
 
