@@ -958,13 +958,13 @@ a particular type) causes a transition to the listed state.
 unknown or unexpected tokens (these are simply violations).}
 
 \minor The client must enqueue a \s{ucinewgame} message at least once before
-before it enqueues a \s{go} message for the first time.
+before it enqueues a \s{go} message for the first time after the initial state.
 \vskip-\parskip
 \bluebox{Engines are strongly recommended to behave identically whether or not
 a \s{ucinewgame} message is ever sent.}
 
 \minor The client must enqueue a \s{position} message at least once before it
-enqueues a \s{go} message for the first time.
+enqueues a \s{go} message for the first time after the initial state.
 \vskip-\parskip
 \bluebox{Engines are strongly recommended, if a \s{position} message is not
 sent before the first \s{go} message, to behave as if \s{position startpos}
