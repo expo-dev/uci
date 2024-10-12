@@ -304,7 +304,7 @@
 %
 \vglue1\baselineskip
 \centerline{\lcap8 UNIVERSAL CHESS INTERFACE}
-\centerline{\lcap4 september 2024 • draft}
+\centerline{\lcap4 october 2024 • draft}
 
 \vskip4\baselineskip
 
@@ -419,7 +419,7 @@ message.
 \minor A sequence of bytes that does not contain any tokens (that is, an empty
 sequence or a sequence of one or more repetitions of \hex{20}) is \term{void}.
 
-\minor A \term{position} is a tuple with the following fields:
+\minor A \term{position} is a structure with the following fields:
 
 {\leftskip=3ex
 
@@ -499,15 +499,14 @@ Universal Chess Interface.}
 \vskip-\parskip
 \greybox{The 2023 {\caps fide} Laws of Chess state that the game ends
 immediately when a player cannot checkmate the king by any series of legal
-moves, but this condition does not cause a position to not be valid (as defined
-above).}
+moves, but this condition does not cause a position to be invalid.}
 \vskip-\parskip
 \bluebox{Engines are recommended to accept positions that are checkmate or
 stalemate even though they are not required to handle receiving such positions.
 For such positions, engines should report null as the best move (see
 \the\majorcount·{\advance\minorcount by 8 \the\minorcount} below).}
 
-\minor A \term{move} is a tuple of three values: a board index called the
+\minor A \term{move} is a structure of three values: a board index called the
 \term{source}, a board index called the \term{destination}, and a field
 called the \term{promotion kind} that is either {\caps none} or queen, rook,
 bishop, or knight.

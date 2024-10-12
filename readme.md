@@ -1,8 +1,6 @@
-<div align="center">
+<p align="center"><img src="banner.png" style="width: 20em;"></p>
 
-# Universal Chess Interface
-
-</div>
+<h1 align="center">Universal Chess Interface</h1>
 
 The programs in this repository are protected by copyright. However, they are
 available to you under the terms of version 3 of the GNU Affero General Public
