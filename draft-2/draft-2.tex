@@ -624,11 +624,14 @@ either ⟨\ot\s{debug on}\ot⟩ or ⟨\ot\s{debug off}\ot⟩.
 feely send \s{info string} messages with this information after receiving
 \s{debug on} and suppress these messages after receiving \s{debug off}.}
 
+% TODO remember to note in the engine section that names and values cannot
+%   contain “name” or “value”
+
 \minor A \s{setoption} message is well-formed if it has a prefix of the form
 ⟨\ot\s{setoption name} {\it tok}\ot\sup+ \s{value}\ot⟩, where {\it tok}\ot\sup+
-is one or more tokens (none of which are \s{value}) matching an option name
-listed in an \s{option} message enqueued by the engine, and a suffix satisfying
-the condition(s) for the corresponding option type:
+is one or more tokens matching an option name listed in an \s{option} message
+enqueued by the engine, and a suffix satisfying the condition(s) for the
+corresponding option type:
 
 {\leftskip=3ex
 
@@ -652,9 +655,8 @@ specified.}
 
 \vskip-0.5\parskip A \s{setoption} message is also well-formed if it is of the
 form ⟨\ot\s{setoption name} {\it tok}\ot\sup+\pt⟩ where {\it tok}\ot\sup+ is one
-or more tokens (none of which are \s{value}) matching an option name listed in
-an \s{option} message enqueued by the engine for which the corresponding option
-type is \s{button}.
+or more tokens matching an option name listed in an \s{option} message enqueued
+by the engine for which the corresponding option type is \s{button}.
 
 \minor A \s{position} message is well-formed if it has the form\par
 \vskip-\parskip\hskip3ex
