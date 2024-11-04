@@ -46,6 +46,8 @@
 \font\fw =\ldfont {\codefamily}{\codesize}{\codefeat}%
 \font\ifw=\ldifont{\codefamily}{\codesize}{\codefeat}%
 %
+\font\cas=\ldfont{Cascadia Mono Italic SemiLight Italic}{9.5}{\codefeat}%
+%
 \def\fs{%
   \spaceskip=0.5em
   \xspaceskip=0.5em
@@ -250,7 +252,7 @@
 \long\def\comment#1{\color{\r{  grey_fg}}{{\noto ※ }#1}}%
 \long\def\s      #1{\color{\r{  teal_fg}}{\fw #1}}%
 %
-\def\hex#1{{\fw\color{\r{ltgrey_fg}}{x}#1}}%
+\def\hex#1{{\fw\color{\r{ltgrey_fg}}{\cas x}#1}}%
 \def\uni#1{{\caps u+#1}}%
 %
 \def\ellipsis{.\ot.\ot.}
@@ -302,49 +304,71 @@
 \def\var  #1{{\ifw #1}}%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-\vglue1\baselineskip
 \centerline{\lcap8 UNIVERSAL CHESS INTERFACE}
 \centerline{\lcap4 october 2024 • draft}
 
-\vskip4\baselineskip
+\vskip3\baselineskip
 
 {\bf Introduction}
 
 This specification governs the interaction between two processes named the
 {\it client} and the {\it engine}. \comment{Graphical interfaces, terminal
 emulators, and scripts and utilities are examples of clients.} The text of
-sections 1–4 is normative (except as described in {\it Conventions} below).
+sections 1–4 is normative (except within comments and colored boxes, described
+in the section {\it Notation} below).
 
 {\bf Getting Started}
 
 {\it This section needs to be written! It should contain enough for a beginner
 to add basic {\icap uci} support to their engine.}
 
-{\bf Conventions}
+\vfil\break
 
-Sequences are written with angle brackets; for example, ⟨\ot0, 1, 2,
-\ellipsis\pt⟩. An~{\fw\color{\r{ltgrey_fg}}{x}} preceding a number
-indicates that it is written in hexadecimal; for example, \hex{10} = 16.
-Sequences of bytes encoded in {\caps ascii} are set in teal; for example,
-\s{uci} = ⟨\ot\hex{75}, \hex{63}, \hex{69}⟩\pt. Sequences of tokens may be
-written without commas when they contain token literals; for example,
-⟨\ot\s{ab}~\s{c}~{\it d}~\s{e}\ot⟩ rather than
-⟨\ot\s{ab},~\s{c},~{\it d},~\s{e}\ot⟩.
+{\bf Notation}
 
-Special terms defined by the specification are set in \term{purple} when they
-are first introduced and inline comments are set \comment{after a reference
-mark}.
+An~\hex{} preceding a number indicates that it is written in hexadecimal; for
+example, \hex{10} = 16. A letter or word set in teal is an abbreviation for a
+byte or sequence of bytes encoded in {\caps ascii}; for example,
+\s{k} = \hex{6b} and \s{uci} = ⟨\ot\hex{75}, \hex{63}, \hex{69}⟩\pt. Special
+terms defined by the specification are set in \term{purple} when they are
+first introduced and inline comments are set \comment{after a reference
+mark}. Comments are nonnormative.
 \vskip-\parskip
 \bluebox{A blue box is used to describe a convention that clients and engines
 are encouraged to follow, usually to do with the interpretation or meaning of
-the messages that clients and engines send. A blue box is also used to provide
-a recommendation, usually to do with implementation-defined behavior.}
+the different messages that clients and engines can send. A blue box is also
+used to provide a recommendation, usually to do with implementation-defined
+behavior.}
 \vskip-\parskip
 \greybox{A grey box is used to provide an explanative note or comment.}
 \vskip-\parskip
 \greenbox{A green box is used to provide an example of conforming behavior.}
 \vskip-\parskip
 Text within colored boxes is nonnormative.
+
+Angle brackets are sometimes used to delimit sequences and commas sometimes used
+to separate items in a sequence. For example, ⟨\ot\s{go}~\s{depth} {\it d}
+\s{movetime}~\s{1000}\ot⟩ and
+⟨\ot\s{go},~\s{depth},~{\it d},~\s{movetime}~\s{1000}\ot⟩ are equivalent, as
+are \s{go depth 8 movetime 1000} and ⟨\ot\s{go}, \s{depth}, \s{8}, \s{movetime},
+\s{1000}\ot⟩.
+
+\def\synitem#1#2{\line{\hskip3ex\hbox to 6em{#1\hfil}\em #2\hfil}}%
+
+Patterns for sequences of bytes are written using traditional syntax for regular
+expressions:\par
+\synitem{parentheses}{group}
+\synitem{brackets}{byte class}
+\synitem{en dash}{byte range}
+\synitem{vertical bar}{alternation}
+\synitem{plus sign}{repetition (once or more)}
+%\synitem{asterisk}{repetition (zero times or more)}
+\synitem{question mark}{repetition (zero times or once)}
+\synitem{braces}{repetition ({\it n} times, or at least {\it n₁} and at most {\it n₂})}
+
+Patterns for sequences of tokens are written using analogous syntax.
+
+\vfil\break
 
 \major{\bf Definitions}
 
@@ -550,7 +574,7 @@ move number}⟩ of the form\par
 %
 \dimen0=5em
 \vskip-0.5\parskip\hskip3ex\rjust{\dimen0}{\it board}
-  \dt=\dt\ \r{(['{\it row}']*8).join('\pt\s/\pt')}\par
+  \dt=\dt\ {\it row}\pt(\s/\pt{\it row}\pt)\char"7B\ot7\ot\char"7D\par
 \vskip-\parskip\hskip3ex\rjust{\dimen0}{\it row}
   \dt=\dt\ \s8 \alt\ [\s1–\s7\s{KQRBNPkqrbnp}]+\par
 \vskip-\parskip\hskip3ex\rjust{\dimen0}{\it side to move}
@@ -960,13 +984,13 @@ a particular type) causes a transition to the listed state.
 unknown or unexpected tokens (these are simply violations).}
 
 \minor The client must enqueue a \s{ucinewgame} message at least once before
-before it enqueues a \s{go} message for the first time after the initial state.
+before it enqueues a \s{go} message for the first time after enqueuing \s{uci}.
 \vskip-\parskip
 \bluebox{Engines are strongly recommended to behave identically whether or not
 a \s{ucinewgame} message is ever sent.}
 
 \minor The client must enqueue a \s{position} message at least once before it
-enqueues a \s{go} message for the first time after the initial state.
+enqueues a \s{go} message for the first time after enqueuing \s{uci}.
 \vskip-\parskip
 \bluebox{Engines are strongly recommended, if a \s{position} message is not
 sent before the first \s{go} message, to behave as if \s{position startpos}
@@ -986,10 +1010,8 @@ state and move history.)}
 and the engine when the client enqueues a well-formed \s{quit} message.
 \vskip-\parskip
 \bluebox{Engines are recommended to stop searching immediately and exit.
-Clients are recommended, if engines are their subprocesses, to provide a
-grace period before terminating engines.}
-
-% \major{\bf Notation}
+Clients are recommended, if the engine is their subprocess, to provide a
+grace period before terminating the engine.}
 
 \vfil\break
 
