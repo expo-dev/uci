@@ -435,7 +435,7 @@ message is either part of a token or is \hex{20}.
 collection of tokens and the remainder will be viewed as a contiguous sequence
 of bytes.}
 
-\minor For a given sequence of tokens that begin a message (the \term{prefix}),
+\minor For a given sequence of tokens that begin a message (a \term{prefix}),
 the \term{suffix} is the contiguous sequence of bytes starting with the first
 byte that is not \hex{20} after the prefix and ending with the last byte of the
 message.
@@ -564,6 +564,9 @@ by two, the en passant target of {\it Q} is the index between the source and
 destination of~{\it M}. If {\it M} is a capture or a pawn move, the depth from
 zeroing of {\it Q} is zero; otherwise, the depth from zeroing of {\it Q} is the
 depth from zeroing of {\it P} plus one.
+
+% TODO note that this definition implies that castling moves are indicated
+%   with e1g1 rather than e1h1 (for example).
 
 \def\rjust#1#2{\hbox to #1{\hfil #2}}
 \def\alt{\vrule height 7.125pt depth 1.375pt width 0.7pt}
@@ -713,6 +716,8 @@ the \s{position} message.
 % TODO state machine: position message “sets” “current position” to P_N
 
 % TODO engine message: bestmove must be valid move from current position
+
+\minor A \term{search modifier} is a 
 
 \minor A \s{go} message is well-formed if\pt\ellipsis
 
