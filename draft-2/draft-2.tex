@@ -1,5 +1,5 @@
-\includeruby color.rb
-\includeruby syntax.rb
+\include color.rb
+\include syntax.rb
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \XeTeXuseglyphmetrics=1
 %
@@ -141,7 +141,7 @@
 \def\em {\hskip 1.000em}%
 \def\dem{\hskip 2.000em}%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\beginruby
+\begin
   pageW   = 210
   pageH   = 297
   marginL =  50
@@ -152,7 +152,7 @@
   voffset = (marginT - 25.4).round(3)
   hsize   = (pageW - marginL - marginR).round(3)
   vsize   = (pageH - marginT - marginB).round(3)
-\endruby
+\end
 \pdfpagewidth\r{pageW}mm
 \pdfpageheight=\r{pageH}mm
 \hoffset=\r{hoffset}mm
@@ -168,7 +168,7 @@
 \raggedbottom
 \nopagenumbers
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\beginruby
+\begin
   # Color Boxes
     grey_bg = lch(0.96, 0.0  ,   0);   grey_rbn = lch(0.70, 0.0  ,   0)
      red_bg = lch(0.96, 0.018,  15);    red_rbn = lch(0.70, 0.18 ,  15)
@@ -190,7 +190,7 @@
   green_fg = lch(0.6, 0.15 , 150)
    blue_fg = lch(0.5, 0.2  , 270)
   lilac_fg = lch(0.6, 0.2  , 300)
-\endruby
+\end
 %
 \newtoks\restorecolor \restorecolor={0 0 0}%
 %
@@ -711,13 +711,34 @@ immediately follows from {\it P}\isub{n} when {\it M}\isub{n} is applied.
 
 \vskip-0.5\parskip The final position (\ot{\it P}\isub{N} if \s{moves} is
 specified, otherwise {\it P}\sub{0}\ot) is the position \term{described} by
-the \s{position} message.
+the \s{position} message. The collection {\it P}\isub{0}, {\it P}\isub{1},
+\ellipsis, {\it P}\sub{{\subit N}−1} is the \term{history} of the \s{position}
+message. If \s{moves} is not specified, the history is an empty collection.
 
-% TODO state machine: position message “sets” “current position” to P_N
+\minor At any point in time, the history and position described by the
+\s{position} message most recently dequeued by the engine are the \term{current
+position history} and \term{current position}, respectively. If the engine has
+not dequeued any \s{position} messages, the current position history and current
+position are undefined. A \s{position} message is said to \term{set} the current
+position history and current position.
 
 % TODO engine message: bestmove must be valid move from current position
 
-\minor A \term{search modifier} is a 
+\minor A \term{search contextualizer} is a
+
+\minor A \term{search limit} is a
+
+\minor A \term{search modifier} is a
+
+% + 999 999 999 999 999 999 fits within  0   to +2⁶⁴−1
+% ± 999 999 999             fits within −2³¹ to +2³¹−1
+% + 9999                    fits within  0   to +2¹⁶−1
+
+% -?(0|[1−9][0−9]{0,8})   wtime btime winc binc
+%      [1−9][0−9]{0,3}    mate movestogo (cannot be zero)
+%    0|[1–9][0–9]{0,3}    depth
+%    0|[1−9][0−9]{0,8}    movetime
+%    0|[1−9][0−9]{0,17}   nodes
 
 \minor A \s{go} message is well-formed if\pt\ellipsis
 
@@ -776,10 +797,10 @@ invariant more generally as follows:
 a message, the message must be well-formed and have an allowed message type
 given the state of the engine.
 \vskip-\parskip
-\greybox{This is not meant to imply that standard input is ever required to be
-empty, but meant to indicate that in some states the engine is not allowed to
-read standard input (or at least must behave as if it has not read standard
-input).}
+\greybox{The word “may” is not meant to imply that standard input is ever
+required to be empty, but meant to indicate that in some states the engine
+is not allowed to read standard input (or at least must behave as if it has
+not read standard input).}
 
 \minor In all states, the engine may enqueue a message. If the engine enqueues a
 message, the message must be well-formed and have an allowed message type given
@@ -999,7 +1020,7 @@ enqueues a \s{go} message for the first time after enqueuing \s{uci}.
 \vskip-\parskip
 \bluebox{Engines are strongly recommended, if a \s{position} message is not
 sent before the first \s{go} message, to behave as if \s{position startpos}
-were sent.}
+had been sent.}
 \vskip-\parskip
 \greybox{Note that the client is not required to send \s{isready} before
 \s{go}.}
@@ -1025,21 +1046,21 @@ grace period before terminating the engine.}
 \advance\hsize by 10mm
 
 \vskip\parskip
-\beginruby
+\begin
 format("let @read_byte! : File_Descriptor -> Byte | EOF")
-\endruby
+\end
 
 \vskip\parskip
-\beginruby
+\begin
 format(%q{
 def withoutCR('msg : List(Byte)) : List(Byte)
   if empty?('msg) or last('msg) ≠ `0d then return 'msg
   return withoutLast('msg)
 })
-\endruby
+\end
 
 \vskip\parskip
-\beginruby
+\begin
 format(%q{
 def read_message!(mut 'fd : File_Descriptor) : List(Byte) | EOF
   'msg <- empty
@@ -1049,10 +1070,10 @@ def read_message!(mut 'fd : File_Descriptor) : List(Byte) | EOF
       `0a => return withoutCR('msg)
       'val => append!('msg, 'val\pt)
 })
-\endruby
+\end
 
 \vskip\parskip
-\beginruby
+\begin
 format(%q{
 def get_token!(mut 'msg : List(Byte)) : List(Byte) | None
   repeat
@@ -1067,6 +1088,6 @@ def get_token!(mut 'msg : List(Byte)) : List(Byte) | None
     if first('msg) = `20 then break
   return 'tok
 })
-\endruby
+\end
 
 \bye

@@ -46,19 +46,30 @@ out = "\
 % ruby version: #{RUBY_VERSION}
 "
 
-def nextStart(src)
-  sxn = src.index('\beginruby')   || Float::INFINITY
-  var = src.index('\\r{')         || Float::INFINITY
-  inc = src.index('\includeruby') || Float::INFINITY
+def nextStart(src, ofs)
+  sxn = src.index('\begin', ofs)   || Float::INFINITY
+  var = src.index('\\r{', ofs)     || Float::INFINITY
+  inc = src.index('\include', ofs) || Float::INFINITY
   start = [sxn, var, inc].min
   return (start == Float::INFINITY ? nil : start)
 end
 
 src = File.read(TEXFILE)
 env = makeEnv()
+ofs = 0
 
-while sos = nextStart(src)
-  tex = src[0...sos]
+while sos = nextStart(src, ofs)
+  tex = src[...sos]
+
+  sol = tex.rindex("\n")
+  if (sol.nil?) ? tex.include?('%') : tex[sol+1..].include?('%')
+    eol = src.index("\n", sol+1)
+    break if eol.nil?
+    ofs = eol+1
+    next
+  end
+  ofs = 0
+
   $line += tex.count("\n")
   out += tex
   if src[sos..sos+2] == '\\r{'
@@ -80,16 +91,15 @@ while sos = nextStart(src)
     out += env.call("print(#{rb})")
     src = src[eos+1..]
   elsif src[sos..sos+5] == '\begin'
-    quit('missing "ruby" after "\\begin"') if src[sos+6..sos+9] != 'ruby'
-    src = src[sos+10..]
-    eos = src.index('\endruby')
-    quit('missing "\\endruby"') if eos.nil?
+    src = src[sos+6..]
+    eos = src.index('\end')
+    quit('missing "\\end"') if eos.nil?
     rb = src[0...eos]
     out += env.call(rb)
-    eos = src.index("\n", eos) || eos+7
+    eos = src.index("\n", eos) || eos+3
     src = src[eos+1..]
   elsif src[sos..sos+7] == '\include'
-    src = src[sos+12..]
+    src = src[sos+8..]
     eos = src.index("\n") || 0
     fn = src[0..(eos-1)].strip
     path = File.join(TEXDIR, fn)
